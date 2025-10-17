@@ -1,0 +1,429 @@
+
+import yaml
+from pathlib import Path
+import shutil
+from dataclasses import dataclass
+import subprocess
+import multiprocessing as mp
+import tqdm
+import psutil
+import tempfile
+import time
+
+# Global paths configuration relative to the build folder
+GLOBAL_PATHS = {
+    'dynoplan': Path('../deps/dynoplan'),
+    'cfg_path': Path('../configs'),
+    'scripts_path': Path('../scripts'),
+    'results_path': Path('../stats_db'),
+    'env_path': Path('../deps/dynoplan/dynobench/envs/mujoco'),
+}
+
+
+@dataclass
+class ExecutionTask:
+    """Class for keeping track of an item in inventory."""
+    instance: str
+    db_param: list
+    trial: int
+    timelimit: float
+
+def run_controller(folder, reftrajectory, output, model_path, computeAcc=True, nocableTrack=False):
+    try:
+        subprocess.run(["python3",
+                    "../dynoplan/dynobench/example/test_quad3dpayload_n.py",
+                        "-cff", "-w",
+                        "--inp", folder / reftrajectory,
+                        "--out", folder / output,
+                        "--model_path", model_path,
+                    ], env={"PYTHONPATH": "dynoplan/dynobench/:/home/khaledwahba94/coltrans-planning/deps/crazyflie-firmware"}, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        return False
+        print(f"Error: {e}")    
+
+def run_checker(filename_env, filename_result, filename_log):
+	with open(filename_log, 'w') as f:
+		cmd = ["./dynoplan/dynobench/check_trajectory",
+					"--result_file", filename_result,
+					"--env_file", filename_env,
+					"--models_base_path" , "../dynoplan/dynobench/models/",
+					"--goal_tol" , "999",
+					"--u_bound_tol", "0.3",
+					"--x_bound_tol", "0.3",
+                    "--traj_tol", "100",
+					"--col_tol", "0.01"]
+		print(subprocess.list2cmdline(cmd))
+		out = subprocess.run(cmd,
+					stdout=f, stderr=f)
+	return out.returncode == 0
+
+
+
+def run_optimization(result_folder, filename_init, filename_env , result, timelimit):
+    try: 
+        with open("{}/log_opt.txt".format(str(result_folder)), 'w') as logfile:
+            print("init_file: ", filename_init)
+            print("env_file: ", filename_env)
+            subprocess.run(["./dynoplan/main_optimization",
+                "--init_file", str(filename_init),
+                "--env_file", str(filename_env),
+                "--models_base_path", "../dynoplan/dynobench/models/",
+                "--solver_id", "1",
+                "--weight_goal", "200",
+                # "--time_weight", "-0.01",
+                # "--time_ref", "1.5",
+                "--max_iter", "50",
+                "--results_file", str(result),
+                "--collision_weight", "500."],
+            stdout=logfile, stderr=logfile, timeout=15*60, check=True)
+            return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+        return False
+
+def visualize_payload(filename_env, output, opt_success=True, reference_traj=None, visualize_controller_out=False):
+    output_html = output.with_suffix(".html")
+
+    if visualize_controller_out:
+        subprocess.run(["python3",
+            "../scripts/visualize_payload.py",
+            "--env", str(filename_env),
+            "--robot", "point",
+            "--result", output,
+            "--output", output_html,
+			"--ref", str(reference_traj)],
+            check=True)
+    else:
+        subprocess.run(["python3",
+            "../scripts/visualize_payload.py",    
+			"--env", str(filename_env),
+		 	"--robot", "point",
+			"--result", output,
+			 "--output", output_html,
+		 ], check=True)
+
+def visualize_unicycles(filename_env, output,  reference_traj=None, visualize_controller_out=False):
+    output_html = output.with_suffix(".html")
+    if visualize_controller_out:
+        subprocess.run(["python3",
+            "../scripts/visualize_unicycles.py",
+            "--env", str(filename_env),
+            "--robot", "unicycle",
+            "--ref", reference_traj,
+            "--result", str(output),
+            "--output", output_html],
+            check=True)
+    else:
+        subprocess.run(["python3",
+            "../scripts/visualize_unicycles.py",    
+			"--env", str(filename_env),
+		 	"--robot", "unicycle",
+			"--result", output,
+			 "--output", output_html,
+		 ], check=True)
+
+
+def generate_init_guess(script, path_to_env, path_to_dbcbs, path_to_result,  path_to_payload, num_robots):
+	subprocess.run(["python3",
+        script,
+        "--joint_robot_env", path_to_env,
+        "--dbcbs", path_to_dbcbs,
+        "--output", path_to_result.with_suffix(".html"),
+        "--result", path_to_result.with_suffix(".yaml"),
+        "--payload", path_to_payload,
+        "--num_robots", str(num_robots)])
+
+
+def run_unicycles_controller(folder, reftrajectory, output, model_path):
+    
+    try:
+        subprocess.run(["python3",
+                "../dynoplan/dynobench/example/unicycle_sim.py",
+                "-w",
+                "--inp", folder / reftrajectory,
+                "--out", folder / output,
+                "--model_path", model_path], env={"PYTHONPATH": "dynoplan/dynobench"}, 
+                check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+        return False
+
+def run_visualize(script, filename_env, filename_result, path_to_payload=None):
+    if path_to_payload is not None:
+        subprocess.run(["python3",
+            script,
+            "--env", filename_env,
+            "--result", filename_result,
+            "--payload", path_to_payload,
+            "--video", filename_result.with_suffix(".html")])
+    else: 
+        subprocess.run(["python3",
+            script,
+            "--env", filename_env,
+            "--result", filename_result,
+            "--video", filename_result.with_suffix(".html")])
+
+def run_dbcbs(filename_env, folder, task, cfg, optcfg_file):
+    timelimit = task.timelimit
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        p = Path(tmpdirname)
+        filename_cfg = p / "cfg.yaml"
+        with open(filename_cfg, 'w') as f:
+            yaml.dump(cfg, f, Dumper=yaml.CSafeDumper)
+        filename_stats = "{}/stats.yaml".format(folder)
+        start = time.time()
+        duration_dbcbs = 0	
+        delta = cfg["delta_0"]	
+        delta_rate = cfg["delta_rate"]	
+        payload_cfg = cfg["payload"]
+        with open(filename_stats, 'w') as stats:
+            stats.write("stats:\n")
+            
+            filename_result_dbcbs = Path(folder) / f"result_dbcbs.yaml"
+            filename_result_dbcbs_opt = Path(folder) / "result_dbcbs_opt.yaml"
+            t_dbcbs_start = time.time()
+            cmd = ["./pc_dbcbs", 
+                "-i", filename_env,
+                "-o", filename_result_dbcbs,
+                "--optimization", filename_result_dbcbs_opt,
+                "--pc_dbcbs_cfg", str(filename_cfg),
+                "--opt_cfg", str(optcfg_file),
+                "-t", str(timelimit*1000)] # -t is in milliseconds [ms]
+            print(subprocess.list2cmdline(cmd))
+            try:
+                with open("{}/log_dbcbs.txt".format(folder), 'w') as logfile:
+                    result = subprocess.run(cmd, timeout=timelimit, stdout=logfile, stderr=logfile)
+                t_dbcbs_stop = time.time()
+                duration_dbcbs += t_dbcbs_stop - t_dbcbs_start
+                if filename_result_dbcbs.exists():
+                    with open(filename_result_dbcbs, "r") as f:
+                        results_dbcbs = yaml.load(f,Loader=yaml.CSafeLoader)
+
+                        if result.returncode != 0 and results_dbcbs["result"][0]["states"] is None:
+                            print("pc-dbCBS failed ", result.returncode)
+                        
+                        else:
+                            
+                            cost = results_dbcbs["cost"]
+                            expansions = results_dbcbs["expansions"]
+                            now = time.time()
+                            t = now - start
+                            print("success!", t, ", instance:", task.instance["name"], " trial: ", task.trial)                    
+                            stats.write("  - duration_dbcbs: {}\n".format(t))
+                            stats.write("    delta_0: {}\n".format(delta))
+                            stats.write("    delta_rate: {}\n".format(delta_rate))
+                            stats.write("    payload_cfg: {}\n".format(payload_cfg)) 
+                            stats.write("    cost: {}\n".format(cost))
+                            stats.write("    expansions: {}\n".format(expansions))
+                            stats.flush()
+                            return True
+                else: 
+                    print("dbcbs failed in: ", ", instance:", task.instance["name"], " trial: ", task.trial, ", result_dbcbs.yaml is not found")                    
+                    return False
+            except subprocess.TimeoutExpired:
+                print(f"pc-dbCBS timed out after {timelimit} seconds")
+                if filename_result_dbcbs_opt.exists():
+                    with open(filename_result_dbcbs_opt, "r") as f:
+                        results_opt = yaml.load(f, Loader=yaml.CSafeLoader)
+                        if results_opt and "states" in results_opt and results_opt["states"]:
+                            with open(filename_result_dbcbs, "r") as f:
+                                results_dbcbs = yaml.load(f,Loader=yaml.CSafeLoader)
+                            cost = results_dbcbs["cost"]
+                            expansions = results_dbcbs["expansions"]
+                            now = time.time()
+                            t = now - start
+                            print("success!", t, ", instance:", task.instance["name"], " trial: ", task.trial)                    
+                            stats.write("  - duration_dbcbs: {}\n".format(t))
+                            stats.write("    delta_0: {}\n".format(delta))
+                            stats.write("    delta_rate: {}\n".format(delta_rate))
+                            stats.write("    payload_cfg: {}\n".format(payload_cfg)) 
+                            stats.write("    cost: {}\n".format(cost))
+                            stats.write("    expansions: {}\n".format(expansions))
+                            stats.flush()
+                            return True
+
+
+                print("No valid results found after timeout in ",  "instance:", task.instance["name"], " trial: ", task.trial)
+                return False
+            
+            except:
+                if filename_result_dbcbs.exists():
+                    with open(filename_result_dbcbs, "r") as f:
+                        results_dbcbs = yaml.load(f,Loader=yaml.CSafeLoader)
+
+                    if results_dbcbs["result"][0]["states"] is None:
+                        print("pc-dbCBS failed ", result.returncode)
+                        print("Failure!")
+                        return False
+                    else:
+                        if filename_result_dbcbs_opt.exists():
+                            cost = results_dbcbs["cost"]
+                            expansions = results_dbcbs["expansions"]
+                            now = time.time()
+                            t = now - start
+                            print("success!", t, ", instance:", task.instance["name"], " trial: ", task.trial)                    
+                            stats.write("  - duration_dbcbs: {}\n".format(t))
+                            stats.write("    delta_0: {}\n".format(delta))
+                            stats.write("    delta_rate: {}\n".format(delta_rate))
+                            stats.write("    payload_cfg: {}\n".format(payload_cfg)) 
+                            stats.write("    cost: {}\n".format(cost))
+                            stats.write("    expansions: {}\n".format(expansions))
+                            stats.flush()
+                            return True
+                        else:
+                            print("pc-dbCBS failed in: ", ", instance:", task.instance["name"], " trial: ", task.trial, ", result_dbcbs.yaml is not found")                    
+                            return False
+                else:
+                    print("pc-dbCBS failed in: ", ", instance:", task.instance["name"], " trial: ", task.trial, ", result_dbcbs.yaml is not found")                    
+                    return False
+def execute_task(task: ExecutionTask):
+
+    scripts_path = GLOBAL_PATHS['scripts_path']
+    results_path = GLOBAL_PATHS['results_path']
+    cfg_path = GLOBAL_PATHS['cfg_path']
+    dynoplan_path = GLOBAL_PATHS['dynoplan']
+    env_path = (GLOBAL_PATHS['env_path'] / task.instance["name"]).with_suffix(".yaml")
+    print("Scripts path:", scripts_path)
+    print("Results path:", results_path)
+    print("Config path:", cfg_path)
+    print("Dynoplan path:", dynoplan_path)
+    print("Environment path:", env_path)
+    assert(env_path.is_file())
+
+    cfg_file = cfg_path / "pc_dbcbs.yaml"  
+    optcfg_file = cfg_path / "opt.yaml"  
+    assert(cfg_file.is_file())
+    assert(optcfg_file.is_file())
+
+    with open(cfg_file) as f:
+        cfg = yaml.safe_load(f)
+
+    result_folder = results_path / task.instance["name"] / "{:03d}".format(task.trial)
+    if result_folder.exists():
+        print(f"Warning! {result_folder} exists already. Deleting...")
+        shutil.rmtree(result_folder)
+    result_folder.mkdir(parents=True, exist_ok=False)
+
+    # find cfg
+    mycfg = cfg["pc-dbcbs"]["default"]
+    mycfg["delta_0"] = task.db_param["delta_0"]
+    mycfg["delta_rate"] = task.db_param["delta_rate"]
+    mycfg["num_primitives_0"] = task.db_param["num_primitives_0"]
+    mycfg["num_primitives_rate"] = task.db_param["num_primitives_rate"]
+    mycfg["heuristic1"] = task.db_param["heuristic1"]
+    mycfg["payload"] = task.db_param["payload"]
+    # wildcard matching
+    import fnmatch
+    for k, v in mycfg.items():
+        if fnmatch.fnmatch(Path(task.instance["name"]).name, k):
+            mycfg = {**mycfg, **v} # merge two dictionaries
+
+    if Path(task.instance["name"]).name in mycfg:
+        mycfg_instance = cfg[task.alg][Path(task.instance["name"]).name]
+        mycfg = {**mycfg, **mycfg_instance} # merge two dictionaries
+    print("Using configurations ", mycfg)
+    print("---------------------------------------")
+    print("Running pc-dbCBS......")
+    success_dbcbs = run_dbcbs(str(env_path), str(result_folder), task, mycfg, optcfg_file)
+    if(success_dbcbs):
+        vis_script = scripts_path / "mesh_visualizer.py"
+        path_to_dbcbs_result =  result_folder / "result_dbcbs.yaml"
+        path_to_dbcbs_opt_result =  result_folder / "result_dbcbs_opt.yaml"
+        path_to_payload = result_folder / "result_dbcbs_payload.yaml"
+        path_to_unicycles = result_folder / "result_dbcbs_unicycles_dummy.yaml"
+        if ((path_to_payload.exists() or path_to_unicycles.exists()) and path_to_dbcbs_opt_result.exists()):
+            print("Visualizing pc-dbCBS solution......")
+
+            with open(env_path) as f:
+                env_dict = yaml.safe_load(f)
+
+            env_joint_robot_path = result_folder / "env.yaml"
+            env_joint_robot_path_checker = result_folder / "env_traj_checker.yaml"
+
+            robot_type = env_dict["joint_robot"][0]["type"]
+
+        
+            control_success = True
+            print("Visualize initial guess...")
+            if "point" in robot_type:
+                run_visualize(vis_script, env_path, path_to_dbcbs_result, path_to_payload)
+                visualize_payload(str(env_joint_robot_path), result_folder / "init_guess_payload.yaml", opt_success=False)
+                print("Running the controller......\n")
+                control_success = run_controller(result_folder, "result_dbcbs_opt.yaml", "trajectory_opt.yaml", "../dynoplan/dynobench/models/" + task.instance["model"])
+                # if control_success:
+                print("Visualizing the controller output......")
+                visualize_payload(str(env_joint_robot_path), result_folder / "result_dbcbs_opt.yaml", reference_traj=result_folder / "result_dbcbs_opt.yaml", visualize_controller_out=True)   
+            
+            if "unicycle" in robot_type:
+                
+                run_visualize(vis_script, env_path, path_to_dbcbs_result, path_to_payload=None)
+                visualize_unicycles(str(env_joint_robot_path), result_folder / "init_guess_unicycles.yaml", visualize_controller_out=False)
+                print("Running the controller......\n")
+                control_success = run_unicycles_controller(result_folder, "result_dbcbs_opt.yaml", "trajectory_opt.yaml", "../dynoplan/dynobench/models/" + task.instance["model"])
+                if control_success:
+                    print("Visualizing the controller output......")
+                    visualize_unicycles(str(env_joint_robot_path), result_folder / "result_dbcbs_opt.yaml", reference_traj=result_folder / "result_dbcbs_opt.yaml", visualize_controller_out=True)
+            
+            if "mujoco" in robot_type:
+                run_visualize(vis_script, env_path, path_to_dbcbs_result, path_to_payload)
+
+
+            # if control_success:
+            #     run_checker(str(env_joint_robot_path_checker), result_folder / "result_dbcbs_opt.yaml", (result_folder / "trajectory_opt.yaml").with_suffix(".check.txt"))
+                # run_checker(str(env_joint_robot_path), result_folder / "trajectory_opt.yaml", (result_folder / "trajectory_opt.yaml").with_suffix(".check.txt"))
+        else: 
+            if path_to_dbcbs_opt_result.exists():
+                print("pc-dbCBS succeeded.")
+            print(f"pc-dbCBS failed in {task.instance['name']}, trial {task.trial}")
+    else: 
+        print(f"pc-dbCBS failed in {task.instance['name']}, trial {task.trial}")
+
+def main():
+    parallel = True
+    instances = [
+        # {"name": "mujocoquad_empty", "model": "mujocoquad_empty.yaml"},
+        # {"name": "mujocoquad_forest", "model": "mujocoquad_forest.yaml"},
+        # {"name": "mujocoquad_flip", "model": "mujocoquad_flip.yaml"},
+        # {"name": "mujocoquadspayload_empty1", "model": "mujocoquadspayload_empty1.yaml"},
+        # {"name": "mujocoquadspayload_empty2", "model": "mujocoquadspayload_empty2.yaml"},
+        # {"name": "mujocoquadspayload_empty3", "model": "mujocoquadspayload_empty3.yaml"},
+        {"name": "mujocoquadspayload_window1", "model": "mujocoquadspayload_window1.yaml"}
+
+    ]
+
+    db_params = [    
+        # {"delta_0": 0.8, "delta_rate": 0.99, "num_primitives_0": 1000, "num_primitives_rate": 0.05, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-0.5,0,0.5],  "tol":0.8}}, # mujocoquad_empty
+        # {"delta_0": 0.8, "delta_rate": 0.99, "num_primitives_0": 1000, "num_primitives_rate": 0.05, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-0.5,0,0.5],  "tol":0.8}}, # mujocoquad_forest
+        # {"delta_0": 0.65, "delta_rate": 0.99, "num_primitives_0": 1000, "num_primitives_rate": 0.05, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-0.5,0,0.5],  "tol":0.8}}, # mujocoquad_flip
+        # {"delta_0": 0.9, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.9}}, # mujucoquadspayload1
+        # {"delta_0": 0.6, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.6}}, # mujucoquadspayload2
+        # {"delta_0": 0.6, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.6}}, # mujucoquadspayload3
+        {"delta_0": 0.7, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.7}}, # mujucoquadspayload1
+
+
+    ] 
+
+
+    trials = 1
+    timelimit = 350 # [s]
+    tasks = []
+    for instance, db in zip(instances, db_params):
+        for trial in range(trials):
+            tasks.append(ExecutionTask(instance, db, trial, timelimit))
+
+    if parallel and len(tasks) > 1:
+        use_cpus = psutil.cpu_count(logical=False) - 2
+        print("Using {} CPUs".format(use_cpus))
+        with mp.Pool(use_cpus) as p:
+            for _ in tqdm.tqdm(p.imap_unordered(execute_task, tasks)):
+                pass
+    else:
+        for task in tasks:
+            execute_task(task)
+
+
+
+if __name__ == '__main__':
+    main()
