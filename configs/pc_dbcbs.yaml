@@ -1,0 +1,23 @@
+pc-dbcbs:
+  default:
+    delta_0: 0.8
+    delta_rate: 0.99
+    num_primitives_0: 1000
+    num_primitives_rate: 0.05
+    alpha: 0.5
+    filter_duplicates: True
+    heuristic1: "no-reverse-search"
+    heuristic1_delta: 1.0
+    payload:
+      solve_p0: False
+      anytime: False
+      p0_init_guess: [-0.5, 0.0, 0.0]
+      tol: 0.3
+  '*_unicycle_sphere':
+    delta_0: 0.9
+  '*_hetero':
+    delta_0: 0.75
+  '*_trailer':
+    delta_0: 0.9
+
+
