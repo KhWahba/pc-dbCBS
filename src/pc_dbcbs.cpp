@@ -96,6 +96,8 @@ int main(int argc, char* argv[]) {
         tol = cfg["payload"]["tol"].as<float>();
       }
     }
+    payload_pcdbcbs_data pcdbcbs_data;
+    pcdbcbs_data.load_from_yaml(cfg["payload_opt"]);
     std::cout << "solve with payload: " << solve_p0 << std::endl;
     float alpha = cfg["alpha"].as<float>();
     bool filter_duplicates = cfg["filter_duplicates"].as<bool>();
@@ -103,6 +105,7 @@ int main(int argc, char* argv[]) {
     Options_tdbastar options_tdbastar;
     options_tdbastar.outFile = outputFile;
     options_tdbastar.search_timelimit = timeLimit;
+    options_tdbastar.alpha = alpha;
     options_tdbastar.cost_delta_factor = 0;
     options_tdbastar.delta = cfg["delta_0"].as<float>();
     options_tdbastar.fix_seed = 1;
@@ -114,7 +117,7 @@ int main(int argc, char* argv[]) {
     }
     options_tdbastar.rewire = true;
     bool save_forward_search_expansion = false;
-    bool save_reverse_search_expansion = true;
+    bool save_reverse_search_expansion = false;
     // tdbastar problem
     dynobench::Problem problem(inputFile);
     dynobench::Problem problem_original(inputFile);
@@ -266,6 +269,7 @@ int main(int argc, char* argv[]) {
     problem.goals = problem_original.goals;
     options_tdbastar.delta = cfg["delta_0"].as<float>();
     int optimization_counter = 0;
+    int optimization_counter_failed = 0;
     std::string optimizationFile_anytime = optimizationFile;
     auto discrete_start = std::chrono::steady_clock::now();
     auto start_time = std::chrono::steady_clock::now();
@@ -379,7 +383,7 @@ int main(int argc, char* argv[]) {
         HighLevelNode P = open.top();
         open.pop();
         Conflict inter_robot_conflict;
-        if (!getEarliestConflict(P.solution, robots, col_mng_robots, robot_objs, inter_robot_conflict, p0_init_guess, p0_sol, solve_p0, tol)){
+        if (!getEarliestConflict(P.solution, robots, col_mng_robots, robot_objs, inter_robot_conflict, p0_init_guess, p0_sol, solve_p0, tol, pcdbcbs_data)){
           solved_db = true;
           auto discrete_end = std::chrono::steady_clock::now();
           duration_discrete = discrete_end - discrete_start;
@@ -471,6 +475,10 @@ int main(int argc, char* argv[]) {
             solved_opt = false;
             
             add_motion_primitives(problem, sol_broken, sub_motions, robots, sum_cost);
+            size_t pos = optimizationFile.rfind(".yaml");
+            std::string optimizationFile_broken = optimizationFile.substr(0, pos) + "_broken_" + std::to_string(optimization_counter_failed) + optimizationFile.substr(pos);
+            sol_broken.to_yaml_format(optimizationFile_broken.c_str());
+            optimization_counter_failed++;
             break;  
           }
           auto end = std::chrono::steady_clock::now();
