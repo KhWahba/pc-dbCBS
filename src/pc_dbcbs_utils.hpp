@@ -17,6 +17,41 @@
 #include "dynoplan/tdbastar/planresult.hpp"
 
 
+struct payload_pcdbcbs_data {
+  double mu;
+  double lambda;
+  Eigen::VectorXf bounds_min;
+  Eigen::VectorXf bounds_max;
+  double w_strech;  // penalty for cable stretch
+  double w_bounds;  // penalty for violating workspace bounds
+  double w_coll; // penalty for collision
+  fcl::CollisionObjectd* payload_obj = nullptr; // payload geometry;
+
+  void load_from_yaml(const YAML::Node& config) {
+    if (config["mu"]) mu = config["mu"].as<double>();
+    if (config["lambda"]) lambda = config["lambda"].as<double>();
+    if (config["w_strech"]) w_strech = config["w_strech"].as<double>();
+    if (config["w_bounds"]) w_bounds = config["w_bounds"].as<double>();
+    if (config["w_coll"]) w_coll = config["w_coll"].as<double>();
+    // if (config["tol"]) tol = config["tol"].as<double>();
+    
+    if (config["bounds_min"]) {
+      const auto& min_vals = config["bounds_min"];
+      bounds_min.resize(min_vals.size());
+      for (size_t i = 0; i < min_vals.size(); ++i) {
+        bounds_min[i] = min_vals[i].as<float>();
+      }
+    }
+    
+    if (config["bounds_max"]) {
+      const auto& max_vals = config["bounds_max"];
+      bounds_max.resize(max_vals.size());
+      for (size_t i = 0; i < max_vals.size(); ++i) {
+        bounds_max[i] = max_vals[i].as<float>();
+      }
+    }
+  }
+};
 
 void add_motion_primitives(dynobench::Problem &problem, 
                            dynobench::Trajectory &trajectory, 
@@ -212,6 +247,13 @@ typedef struct {
     double mu;  // regularization weight
     double lambda; // penalty term
     Eigen::VectorXf p0_d; // Desired payload position (likely to be the previous solution)
+    Eigen::VectorXf bounds_min;
+    Eigen::VectorXf bounds_max;
+    double w_strech = 0.0;
+    double w_bounds = 0.0;
+    double w_coll  = 0.0;                                   // weight for distance penalty
+    std::shared_ptr<fcl::BroadPhaseCollisionManagerd> env; // environment manager
+    fcl::CollisionObjectd* payload_obj = nullptr;          // payload geometry
 } cost_data;
 
 
@@ -223,25 +265,73 @@ double cost(const std::vector<double> &p0, std::vector<double> &/*grad*/, void *
     const auto& l = d -> l;
     const auto& mu = d -> mu;
     const auto& lambda = d -> lambda;
-
-    double cost = 0;
-    double dist  = 0;
+    const auto& w_strech = d->w_strech;
+    const auto& w_coll = d->w_coll;
+    const auto& bmin    = d->bounds_min;
+    const auto& bmax    = d->bounds_max;
+    const double w_bounds = d->w_bounds;
+    double cost_cable = 0;
+    double cost_bounds = 0;
+    double cost_col = 0;
+    double cost_min_z = 0;
+    double cost_reg = 0;
     Eigen::VectorXf p0_eigen = create_vector(p0);
     int i = 0;
     double minZ = std::numeric_limits<double>::max();
     double l_min = 0;
     for(const auto& p : pi) {
         double dist = (p0_eigen - p).norm() - l[i];
-        cost += dist*dist;
+        // distance between payload and robot
+        double d = (p0_eigen - p).norm();
+        // how much we EXCEED the cable length
+        double stretch = d - l[i];            // >0 : stretched, <0 : slack
+        double viol = std::max(0.0, stretch); // only penalize stretching
+        cost_cable += w_strech * viol * viol;
         if (p(2) < minZ) {
             minZ = p(2);
             l_min = l[i];
         }
         ++i;
     } 
-    // cost *= 1.5;
-    cost += mu*(p0_d - p0_eigen).norm(); // + lambda*(minZ - p0_eigen(2) - l_min)*(minZ - p0_eigen(2) - l_min);
-    return cost;
+    // Bounds cost
+    for (int k = 0; k < 3; ++k) {
+        double v = p0_eigen(k);
+        if (v < bmin(k)) {
+            double diff = bmin(k) - v;
+            cost_bounds += w_bounds * diff * diff;
+        } else if (v > bmax(k)) {
+            double diff = v - bmax(k);
+            cost_bounds += w_bounds * diff * diff;
+        }
+    }
+    // Collision cost
+    if (d->env && d->payload_obj && d->w_coll > 0.0) {
+        fcl::Transform3d tf;
+        tf.setIdentity();
+        tf.translation() = p0_eigen.cast<double>();
+        d->payload_obj->setTransform(tf);
+        d->payload_obj->computeAABB();
+
+        fcl::DefaultDistanceData<double> dist_data;
+        d->env->distance(d->payload_obj, &dist_data,
+                         fcl::DefaultDistanceFunction<double>);
+
+        double d_min = dist_data.result.min_distance;  // can be negative if penetrating
+        double viol  = std::max(0.0, - d_min);
+        cost_col += w_coll * viol * viol;
+    }
+
+    double payload_z = p0_eigen(2);
+    double alpha = 0.85; // tuning parameter
+    double z_vert = minZ - alpha * l_min;
+    double viol_above_lowest = std::max(0.0, payload_z - z_vert);
+    // only penalize if payload goes ABOVE lowest quad
+    cost_min_z += lambda * viol_above_lowest * viol_above_lowest;
+    
+    // Regularization to previous position
+    cost_reg += mu*(p0_d - p0_eigen).norm();
+
+    return cost_cable + cost_min_z + cost_bounds + cost_col + cost_reg;
 }
 
 Eigen::VectorXf optimizePayload(Eigen::VectorXf &p0_opt,
@@ -256,7 +346,11 @@ Eigen::VectorXf optimizePayload(Eigen::VectorXf &p0_opt,
     // set the initial guess
     opt.set_min_objective(cost, &data);
     opt.set_xtol_rel(1e-4); // Tolerance
-
+    if (data.env && !data.payload_obj) {
+        std::shared_ptr<fcl::CollisionGeometryd> payload_geom(
+            new fcl::Sphered(0.05)); // radius 5cm, tune as you like
+        data.payload_obj = new fcl::CollisionObjectd(payload_geom);
+    }
     double minf; // Variable to store the minimum value found
     try {
         nlopt::result result = opt.optimize(p0_vec, minf);
@@ -362,7 +456,7 @@ bool getEarliestConflict(
     std::vector<double>& p0_init_guess_std,
     std::vector<Eigen::VectorXf>& p0_sol,
     const bool& solve_p0,
-    const float& max_tol){
+    const float& max_tol, payload_pcdbcbs_data& pcdbcbs_data) {
     size_t max_t = 0;
     for (const auto& sol : solution){
       max_t = std::max(max_t, sol.trajectory.states.size() - 1);
@@ -462,8 +556,6 @@ bool getEarliestConflict(
             }
             if (startsWith(all_robots[0]->name, "quad3d") || startsWith(all_robots[0]->name, "mujocoquad")) { // Assuming Homogenous robot team
                 size_t dim = 3;
-                double mu = 0.1;
-                double lambda = 4;
                 std::vector<Eigen::VectorXf> pi;
                 std::vector<double> li;
                 for (const auto& robot_obj : robot_objs) {
@@ -474,7 +566,7 @@ bool getEarliestConflict(
                 std::random_device rd;                     
                 std::default_random_engine eng(rd());      
                 std::shuffle(pi.begin(), pi.end(), eng);
-                cost_data data {pi, li, mu, lambda, p0_init_guess}; // prepare the data for the opt
+                cost_data data {pi, li, pcdbcbs_data.mu, pcdbcbs_data.lambda, p0_init_guess, pcdbcbs_data.bounds_min, pcdbcbs_data.bounds_max, pcdbcbs_data.w_strech, pcdbcbs_data.w_bounds, pcdbcbs_data.w_coll, all_robots[0]->env, pcdbcbs_data.payload_obj}; // prepare the data for the opt
                 optimizePayload(p0_opt, dim, p0_init_guess, data);
                 p0_init_guess << p0_opt(0), p0_opt(1), p0_opt(2);
                 size_t robot_counter = 0;
