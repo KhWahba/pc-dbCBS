@@ -39,7 +39,7 @@ def normalize(vec):
 def visualize(env_file, result_file, video_file, payload_file=None):
     vis = meshcat.Visualizer()
     # vis.open()
-    anim = Animation()
+    anim = Animation(default_framerate=1/0.01) # 100 Hz
 
     res = vis.static_html()
     with open("output.html", "w") as f:
@@ -54,8 +54,10 @@ def visualize(env_file, result_file, video_file, payload_file=None):
         pstates = np.array(payload_states["payload"], dtype=np.float64)
         draw_payload = True
         vis["payload"].set_object(
-                  g.Mesh(g.Sphere(0.02), g.MeshLambertMaterial(color="r",opacity=1.0)))
+                  g.Mesh(g.Sphere(0.02), g.MeshLambertMaterial(DnametoColor.get("magenta", 0xff11dd))))
 
+        vis["trace_payload"].set_object(
+                    g.Line(g.PointsGeometry(pstates.T), g.LineBasicMaterial(color=DnametoColor.get("red", 0xff11dd))))
     vis["/Cameras/default"].set_transform(
         tf.translation_matrix([0, 0, 0]).dot(
             tf.euler_matrix(0, np.radians(-30), np.radians(90))))
@@ -86,15 +88,15 @@ def visualize(env_file, result_file, video_file, payload_file=None):
         state.append(s)
       states.append(state)
       if "quad" in data["robots"][0]["type"]:
-        vis["Quadrotor" + str(name_robot)].set_object(g.StlMeshGeometry.from_file('../meshes/cf2_assembly.stl'), g.MeshLambertMaterial(color="green"))
+        vis["Quadrotor" + str(name_robot)].set_object(g.StlMeshGeometry.from_file('../meshes/cf2_assembly.stl'), g.MeshLambertMaterial(color=DnametoColor.get("white", 0xff11dd)))
       elif "unicycle" in data["robots"][0]["type"]:
         vis["unicycle" + str(name_robot)].set_object(g.Mesh(g.Box([0.1, 0.05, 0.05]), material=g.MeshLambertMaterial(color=list(DnametoColor.items())[name_robot][1])))
       name_robot+=1
     
-    # for i in range(len(states) - 1):
-    #     vis[f"rod{i}"].set_object(
-    #         g.Mesh(g.Box([0.6*0.5, 0.01, 0.01]), g.MeshLambertMaterial(color=0x000000))
-    #     )
+    for i in range(name_robot):
+      pos_quad_trace = np.array(result["result"][i]["states"])[:,0:3]
+      if "quad" in data["robots"][0]["type"]:
+        vis["trace_quadrotor" + str(i)].set_object(g.Line(g.PointsGeometry(pos_quad_trace.T), g.LineBasicMaterial(color=DnametoColor.get("blue", 0xff11dd))))
 
     max_k = 0
     for state in states: 
@@ -114,10 +116,15 @@ def visualize(env_file, result_file, video_file, payload_file=None):
             if draw_payload:
               qc = normalize(pstates[k,0:3] - robot_state[0:3])
               len_cable = np.linalg.norm(pstates[k,0:3] - robot_state[0:3])
-              cablePos  = pstates[k,0:3] - 0.5*np.array(qc)/2
+              cablePos  = pstates[k,0:3] - len_cable*np.array(qc)/2
               cableQuat = rn.vector_vector_rotation(qc, [0,0,-1])
-              vis["cable"+ str(l)].set_object(g.Box([0.005,0.005,0.5]), g.MeshLambertMaterial(color=0x000000)) # l = 0.5, hard coded
-              
+              vis["cable"+ str(l)].set_object(g.Box([0.005,0.005,1.0]), g.MeshLambertMaterial(color=0x000000)) # l = 0.5, hard coded
+              scale_factors = [1.0, 1.0, len_cable]  # original length is 1.0
+              frame["cable" + str(l)].set_property(
+                    "scale",         # prop name
+                    "vector3",       # jstype: JS vec3
+                    scale_factors    # value: list of 3 floats
+                )
               frame["cable" + str(l)].set_transform(tf.translation_matrix(cablePos).dot(
                                                                 tf.quaternion_matrix(cableQuat)))
           elif "unicycle" in data["robots"][0]["type"]:
