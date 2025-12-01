@@ -4,7 +4,7 @@ pc-dbcbs:
     delta_rate: 0.99
     num_primitives_0: 1000
     num_primitives_rate: 0.05
-    alpha: 0.5
+    alpha: 0.3
     filter_duplicates: True
     heuristic1: "no-reverse-search"
     heuristic1_delta: 1.0
@@ -13,6 +13,14 @@ pc-dbcbs:
       anytime: False
       p0_init_guess: [-0.5, 0.0, 0.0]
       tol: 0.3
+    payload_opt:
+      mu: 0.01
+      lambda: 0.02
+      w_strech: 100.0
+      w_bounds: 10.0
+      w_coll: 300.0
+      bounds_min: [-2.0, -1.0, 0.0]
+      bounds_max: [2.0, 1.0, 1.0]
   '*_unicycle_sphere':
     delta_0: 0.9
   '*_hetero':

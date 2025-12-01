@@ -14,12 +14,12 @@ disturbance: 1e-5
 num_threads: 1
 th_stop: 1e-2
 init_reg: 1e2
-th_acceptnegstep: .3
+th_acceptnegstep: .1
 noise_level: 1e-4
 u_bound_scale: 1
 max_iter: 100
 debug_file_name: /tmp/debug_file.yaml
-weight_goal: 200
+weight_goal: 100
 collision_weight: 100
 smooth_traj: false
 shift_repeat: false
