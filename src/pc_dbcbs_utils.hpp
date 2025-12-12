@@ -25,6 +25,7 @@ struct payload_pcdbcbs_data {
   double w_strech;  // penalty for cable stretch
   double w_bounds;  // penalty for violating workspace bounds
   double w_coll; // penalty for collision
+  double d_safe; // safety distance for collision checking
   fcl::CollisionObjectd* payload_obj = nullptr; // payload geometry;
 
   void load_from_yaml(const YAML::Node& config) {
@@ -33,6 +34,7 @@ struct payload_pcdbcbs_data {
     if (config["w_strech"]) w_strech = config["w_strech"].as<double>();
     if (config["w_bounds"]) w_bounds = config["w_bounds"].as<double>();
     if (config["w_coll"]) w_coll = config["w_coll"].as<double>();
+    if (config["d_safe"]) d_safe = config["d_safe"].as<double>();
     // if (config["tol"]) tol = config["tol"].as<double>();
     
     if (config["bounds_min"]) {
@@ -252,6 +254,7 @@ typedef struct {
     double w_strech = 0.0;
     double w_bounds = 0.0;
     double w_coll  = 0.0;                                   // weight for distance penalty
+    double d_safe = 0.2;                                    // safety distance for collision checking
     std::shared_ptr<fcl::BroadPhaseCollisionManagerd> env; // environment manager
     fcl::CollisionObjectd* payload_obj = nullptr;          // payload geometry
 } cost_data;
@@ -270,6 +273,7 @@ double cost(const std::vector<double> &p0, std::vector<double> &/*grad*/, void *
     const auto& bmin    = d->bounds_min;
     const auto& bmax    = d->bounds_max;
     const double w_bounds = d->w_bounds;
+    const double d_safe = d -> d_safe;
     double cost_cable = 0;
     double cost_bounds = 0;
     double cost_col = 0;
@@ -317,7 +321,7 @@ double cost(const std::vector<double> &p0, std::vector<double> &/*grad*/, void *
                          fcl::DefaultDistanceFunction<double>);
 
         double d_min = dist_data.result.min_distance;  // can be negative if penetrating
-        double viol  = std::max(0.0, - d_min);
+        double viol  = std::max(0.0, d_safe- d_min);
         cost_col += w_coll * viol * viol;
     }
 
@@ -566,26 +570,46 @@ bool getEarliestConflict(
                 std::random_device rd;                     
                 std::default_random_engine eng(rd());      
                 std::shuffle(pi.begin(), pi.end(), eng);
-                cost_data data {pi, li, pcdbcbs_data.mu, pcdbcbs_data.lambda, p0_init_guess, pcdbcbs_data.bounds_min, pcdbcbs_data.bounds_max, pcdbcbs_data.w_strech, pcdbcbs_data.w_bounds, pcdbcbs_data.w_coll, all_robots[0]->env, pcdbcbs_data.payload_obj}; // prepare the data for the opt
+
+                cost_data data {pi, li, pcdbcbs_data.mu, pcdbcbs_data.lambda, p0_init_guess, pcdbcbs_data.bounds_min, pcdbcbs_data.bounds_max, pcdbcbs_data.w_strech, pcdbcbs_data.w_bounds, pcdbcbs_data.w_coll, pcdbcbs_data.d_safe, all_robots[0]->env, pcdbcbs_data.payload_obj}; // prepare the data for the opt
                 optimizePayload(p0_opt, dim, p0_init_guess, data);
                 p0_init_guess << p0_opt(0), p0_opt(1), p0_opt(2);
                 size_t robot_counter = 0;
-                for (const auto& p : pi) {
-                    float distance = (p - p0_opt).norm();
-                    double tol = abs(distance - li[robot_counter]);
-                    if (tol > max_tol) {
-                        std::cout << "robot_id: "<< robot_counter << ", tol: " << tol  << std::endl;
-                        std::cout << "p: \n" << pi[robot_counter] << "\np0: \n" << p0_opt << std::endl;
-                        early_conflict.time = t * all_robots[0]->ref_dt;
-                        early_conflict.robot_idx_i = robot_counter; 
-                        early_conflict.robot_state_i = node_states[early_conflict.robot_idx_i];
-                        std::cout << "CONFLICT at time " << t*all_robots[0]->ref_dt << " " << early_conflict.robot_idx_i << std::endl;
-                        early_conflict.robot_idx_j = 99;
-                        // early_conflict.robot_state_j = node_states[early_conflict.robot_idx_j];
-                        assert(early_conflict.robot_idx_i != early_conflict.robot_idx_j);
-                        return true;
+                // for (const auto& p : pi) {
+                //     float distance = (p - p0_opt).norm();
+                //     double tol = abs(distance - li[robot_counter]);
+                //     if (tol > max_tol) {
+                //         std::cout << "robot_id: "<< robot_counter << ", tol: " << tol  << std::endl;
+                //         std::cout << "p: \n" << pi[robot_counter] << "\np0: \n" << p0_opt << std::endl;
+                //         early_conflict.time = t * all_robots[0]->ref_dt;
+                //         early_conflict.robot_idx_i = robot_counter; 
+                //         early_conflict.robot_state_i = node_states[early_conflict.robot_idx_i];
+                //         std::cout << "CONFLICT at time " << t*all_robots[0]->ref_dt << " " << early_conflict.robot_idx_i << std::endl;
+                //         early_conflict.robot_idx_j = 99;
+                //         // early_conflict.robot_state_j = node_states[early_conflict.robot_idx_j];
+                //         assert(early_conflict.robot_idx_i != early_conflict.robot_idx_j);
+                //         return true;
+                //     }
+                //     ++robot_counter;
+                // }
+                // Check pairwise distances between quadrotors
+                for (size_t i = 0; i < pi.size(); ++i) {
+                    for (size_t j = i + 1; j < pi.size(); ++j) {
+                        float dist_ij = (pi[i] - pi[j]).norm();
+                        double tol_ij = dist_ij - (li[i] + li[j]);
+                        if (tol_ij > max_tol) {
+                            std::cout << "robot pair conflict: " << i << " and " << j << ", tol: " << tol_ij << std::endl;
+                            std::cout << "p_i: \n" << pi[i] << "\np_j: \n" << pi[j] << std::endl;
+                            early_conflict.time = t * all_robots[0]->ref_dt;
+                            early_conflict.robot_idx_i = i;
+                            early_conflict.robot_state_i = node_states[i];
+                            early_conflict.robot_idx_j = j;
+                            early_conflict.robot_state_j = node_states[j];
+                            std::cout << "CONFLICT at time " << t*all_robots[0]->ref_dt << " between robots " << i << " and " << j << std::endl;
+                            assert(early_conflict.robot_idx_i != early_conflict.robot_idx_j);
+                            return true;
+                        }
                     }
-                ++robot_counter;
                 }
                 p0_tmp.push_back(p0_opt);        
             } else if (startsWith(all_robots[0]->name, "unicycle")) {

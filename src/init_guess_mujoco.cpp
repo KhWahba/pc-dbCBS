@@ -152,8 +152,8 @@ void generate_init_guess_mujoco(std::string &envPath,
 
             // Quad velocities: linear vel (cols 7–9) and angular vel (cols 10–12)
             for (size_t r = 0; r < numRobots; ++r) {
-                // finalStates.row(t).segment(idx, 3) = robotStates[r].row(t).segment<3>(7);  // lin vel
-                finalStates.row(t).segment(idx, 3) = Eigen::Vector3d::Zero();
+                finalStates.row(t).segment(idx, 3) = robotStates[r].row(t).segment<3>(7);  // lin vel
+                // finalStates.row(t).segment(idx, 3) = Eigen::Vector3d::Zero();
                 idx += 3;
                 // finalStates.row(t).segment(idx, 3) = robotStates[r].row(t).segment<3>(10); // ang vel
                 finalStates.row(t).segment(idx, 3) = Eigen::Vector3d::Zero();

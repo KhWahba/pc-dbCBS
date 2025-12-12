@@ -13,7 +13,7 @@ message(STATUS "Found NLopt in ${NLOPT_INCLUDE_DIRS}")
 
 add_subdirectory(deps/dynoplan)
 
-set(MJ_ROOT "$ENV{HOME}/inria/phdv2025-khaled_wahba/src/deps/mujoco-3.3.6")
+set(MJ_ROOT "$ENV{HOME}/pc-dbCBS/deps/mujoco-3.3.6")
 if(NOT glfw3_FOUND)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(GLFW REQUIRED glfw3) # uses glfw3.pc

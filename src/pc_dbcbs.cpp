@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
     options_tdbastar.alpha = alpha;
     options_tdbastar.cost_delta_factor = 0;
     options_tdbastar.delta = cfg["delta_0"].as<float>();
-    options_tdbastar.fix_seed = 1;
+    options_tdbastar.fix_seed = 0;
     size_t init_prim_num = cfg["num_primitives_0"].as<size_t>();
     if (cfg["max_motions"]) {
       options_tdbastar.max_motions = cfg["max_motions"].as<size_t>();
@@ -184,7 +184,9 @@ int main(int argc, char* argv[]) {
         } else if (robotType == "integrator2_3d_v0"){
             motionsFile = "../motion_primitives/integrator2_3d_v0/integrator2_3d_v0.bin.im.bin.sp.bin";
         } else if (robotType == "quad3d_v0" || startsWith(robots[0]->name, "mujocoquad")) {
-            motionsFile = "../motion_primitives/quad3d_v0/quad3d_v0.msgpack";
+            // motionsFile = "../motion_primitives/quad3d_v0/quad3d_v0.msgpack";
+            motionsFile = "../motion_primitives/mujocoQuad_test/quad3d.bin.im.bin.sp.bin"; 
+            // motionsFile = "../motion_primitives/mujoco_quad3d/quad3d.bin.im.bin";
             // std::cout << "motionsFile: " << motionsFile << std::endl;
         } else {
             throw std::runtime_error("Unknown motion filename for this robottype!");
@@ -212,12 +214,6 @@ int main(int argc, char* argv[]) {
                                        options_tdbastar.max_motions,
                                        options_tdbastar.cut_actions, /*shuffle*/true, options_tdbastar.check_cols);
             motion_to_motion(robot_motions[problem.robotTypes[i]], sub_motions[problem.robotTypes[i]], *robot, init_prim_num);
-        }
-        if (robot->name == "car_with_trailers") {
-          col_geom_id++;
-          auto robot_obj = new fcl::CollisionObject(collision_geometries[col_geom_id]);
-          collision_geometries[col_geom_id]->setUserData((void*)i); // for the trailer
-          robot_objs.push_back(robot_obj);
         }
         
         col_geom_id++;
@@ -413,6 +409,10 @@ int main(int argc, char* argv[]) {
             } else if (startsWith(robots[0]->name, "mujocoquad")) {                
               outputFile_payload = outputFile.substr(0, pos) + "_mujoco.yaml";
               resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), "init_guess_mujoco.yaml");
+
+              // std::string file_name = "init_guess_mujoco_" + std::to_string(optimization_counter_failed) + ".yaml";
+              // resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), file_name);
+
               export_solution_p0(p0_sol, outputFile_payload);
               generate_init_guess_mujoco(inputFile, outputFile_payload, outputFile, resultPath, robots.size(), joint_robot_env_path);
               p0_sol.clear();
@@ -420,6 +420,10 @@ int main(int argc, char* argv[]) {
           } else if (startsWith(robots[0]->name, "mujocoquad")) {                
               outputFile_payload = outputFile.substr(0, pos) + "_mujoco.yaml";
               resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), "init_guess_mujoco.yaml");
+
+              // std::string file_name = "init_guess_mujoco_" + std::to_string(optimization_counter_failed) + ".yaml";
+              // resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), file_name);
+
               export_solution_p0(p0_sol, outputFile_payload);
               generate_init_guess_mujoco(inputFile, outputFile_payload, outputFile, resultPath, robots.size(), joint_robot_env_path);
               p0_sol.clear();
@@ -516,7 +520,7 @@ int main(int argc, char* argv[]) {
                 } else {
                     throw std::runtime_error("Could not find 'result_dbcbs.yaml' in resultPath");
                 }
-                execute_simMujoco(joint_robot_env_path, resultPath ,sol, DYNOBENCH_BASE, videoPath, "auto", 1, false, feasible);
+                execute_simMujoco(joint_robot_env_path, resultPath ,sol, DYNOBENCH_BASE, videoPath, "auto", feasible=feasible);
               }
             return 0;
           }
