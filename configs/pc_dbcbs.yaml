@@ -15,11 +15,11 @@ pc-dbcbs:
       p0_init_guess: [0.0, 0.0, 0.4]
       tol: 0.3
     payload_opt:
-      mu: 0.5
-      lambda: 5000.0
-      w_strech: 500.0
-      w_bounds: 500.0
-      w_coll: 500.0
+      mu: 1.0
+      lambda: 0.0
+      w_strech: 10.0
+      w_bounds: 10.0
+      w_coll:   100.0
       d_safe: 0.1
       bounds_min: [-2.0, -0.5, 0.0]
       bounds_max: [2.0, 0.5, 1.0]
