@@ -185,7 +185,7 @@ int main(int argc, char* argv[]) {
             motionsFile = "../motion_primitives/integrator2_3d_v0/integrator2_3d_v0.bin.im.bin.sp.bin";
         } else if (robotType == "quad3d_v0" || startsWith(robots[0]->name, "mujocoquad")) {
             // motionsFile = "../motion_primitives/quad3d_v0/quad3d_v0.msgpack";
-            motionsFile = "../motion_primitives/mujocoQuad_test/quad3d.bin.im.bin.sp.bin"; 
+            motionsFile = "../motion_primitives/quad_dt_0.02/quad3d.bin.im.bin.sp.bin"; 
             // motionsFile = "../motion_primitives/mujoco_quad3d/quad3d.bin.im.bin";
             // std::cout << "motionsFile: " << motionsFile << std::endl;
         } else {
