@@ -333,7 +333,7 @@ double cost(const std::vector<double> &p0, std::vector<double> &/*grad*/, void *
     cost_min_z += lambda * viol_above_lowest * viol_above_lowest;
     
     // Regularization to previous position
-    cost_reg += mu*(p0_d - p0_eigen).norm();
+    cost_reg += mu*(p0_d - p0_eigen).squaredNorm();
 
     return cost_cable + cost_min_z + cost_bounds + cost_col + cost_reg;
 }
