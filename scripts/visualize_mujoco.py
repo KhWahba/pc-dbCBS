@@ -247,7 +247,7 @@ def mujoco_meshcat():
         desired = False
         visualizer.draw_traces(np.array(states, dtype=np.float64), desired)
 
-        anim = Animation(default_framerate=1/0.01)  # 100 Hz
+        anim = Animation(default_framerate=1/0.02)  # 50 Hz
         for k, state in enumerate(states):
             with anim.at_frame(visualizer.vis, k) as frame:
                 visualizer.updateVis(np.array(state, dtype=np.float64), frame=frame)

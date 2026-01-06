@@ -386,12 +386,11 @@ def main():
         # {"name": "mujocoquad_empty", "model": "mujocoquad_empty.yaml"},
         # {"name": "mujocoquad_forest", "model": "mujocoquad_forest.yaml"},
         # {"name": "mujocoquad_flip", "model": "mujocoquad_flip.yaml"},
-        {"name": "mujocoquadspayload_empty1", "model": "mujocoquadspayload_empty1.yaml"},
+        # {"name": "mujocoquadspayload_empty1", "model": "mujocoquadspayload_empty1.yaml"},
         # {"name": "mujocoquadspayload_empty2", "model": "mujocoquadspayload_empty2.yaml"},
         # {"name": "mujocoquadspayload_empty3", "model": "mujocoquadspayload_empty3.yaml"},
         # {"name": "mujocoquadspayload_obs1", "model": "mujocoquadspayload_obs1.yaml"},
-        # {"name": "mujocoquadspayload_obs2", "model": "mujocoquadspayload_obs2.yaml"},
-        # {"name": "mujocoquadspayload_window1", "model": "mujocoquadspayload_window1.yaml"}
+        {"name": "mujocoquadspayload_obs2", "model": "mujocoquadspayload_obs2.yaml"},
     ]
 
     db_params = [    
@@ -401,9 +400,8 @@ def main():
         # {"delta_0": 0.5, "delta_rate": 0.99, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.5}}, # mujucoquadspayload_empty1
         # {"delta_0": 0.6, "delta_rate": 0.9, "num_primitives_0": 5000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.3}}, # mujucoquadspayload_empty2
         # {"delta_0": 0.9, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.9}}, # mujucoquadspayload_empty3
-        {"delta_0": 0.5, "delta_rate": 0.95, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.4],  "tol":0.5}}, # mujucoquadspayload1_obs1
-        # {"delta_0": 0.6, "delta_rate": 0.95, "num_primitives_0": 1000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.4],  "tol":0.6}}, # mujucoquadspayload1_obs2
-        # {"delta_0": 0.9, "delta_rate": 0.95, "num_primitives_0": 1000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.25],  "tol":0.9}}, # mujucoquadspayload1_window1
+        # {"delta_0": 0.9, "delta_rate": 0.95, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.2],  "tol":0.6}}, # mujucoquadspayload1_obs1
+        {"delta_0": 0.9, "delta_rate": 0.99, "num_primitives_0": 1000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.2],  "tol":0.9}}, # mujucoquadspayload1_obs2
     ] 
 
 
