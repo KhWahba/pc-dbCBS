@@ -5,6 +5,8 @@ pc-dbcbs:
     num_primitives_0: 1000
     max_motions: 30000
     num_primitives_rate: 0.05
+    delta_factor_goal: 1.0
+    shuffle: False
     alpha: 0.6
     filter_duplicates: True
     heuristic1: "no-reverse-search"
@@ -15,9 +17,9 @@ pc-dbcbs:
       p0_init_guess: [0.0, 0.0, 0.4]
       tol: 0.3
     payload_opt:
-      mu: 1.0
+      mu: 0.01
       lambda: 0.0
-      w_strech: 10.0
+      w_strech: 100.0
       w_bounds: 10.0
       w_coll:   100.0
       d_safe: 0.1
