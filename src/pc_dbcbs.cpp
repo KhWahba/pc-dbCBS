@@ -108,13 +108,15 @@ int main(int argc, char* argv[]) {
     options_tdbastar.alpha = alpha;
     options_tdbastar.cost_delta_factor = 0;
     options_tdbastar.delta = cfg["delta_0"].as<float>();
+    options_tdbastar.delta_factor_goal = cfg["delta_factor_goal"] ? cfg["delta_factor_goal"].as<float>() : 1.0f;
     options_tdbastar.fix_seed = 0;
     size_t init_prim_num = cfg["num_primitives_0"].as<size_t>();
     if (cfg["max_motions"]) {
       options_tdbastar.max_motions = cfg["max_motions"].as<size_t>();
     } else {
-      options_tdbastar.max_motions = 10000;
+      options_tdbastar.max_motions = 100000;
     }
+    options_tdbastar.shuffle = cfg["shuffle"] ? cfg["shuffle"].as<bool>() : false;
     options_tdbastar.rewire = true;
     bool save_forward_search_expansion = false;
     bool save_reverse_search_expansion = false;
@@ -212,7 +214,7 @@ int main(int argc, char* argv[]) {
             options_tdbastar.motionsFile = all_motionsFile[i];
             load_motion_primitives_new(options_tdbastar.motionsFile, *robot, robot_motions[problem.robotTypes[i]], 
                                        options_tdbastar.max_motions,
-                                       options_tdbastar.cut_actions, /*shuffle*/true, options_tdbastar.check_cols);
+                                       options_tdbastar.cut_actions, options_tdbastar.shuffle, options_tdbastar.check_cols);
             motion_to_motion(robot_motions[problem.robotTypes[i]], sub_motions[problem.robotTypes[i]], *robot, init_prim_num);
         }
         
