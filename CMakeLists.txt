@@ -7,10 +7,13 @@ find_package(Eigen3 REQUIRED)
 find_package(PkgConfig)
 pkg_check_modules(YAML REQUIRED yaml-cpp)
 find_package(fcl REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 
 find_package(NLopt REQUIRED)
 message(STATUS "Found NLopt in ${NLOPT_INCLUDE_DIRS}")
 
+# Build position-independent code so static libs can be linked into shared libs
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(deps/dynoplan)
 
 set(MJ_ROOT "$ENV{HOME}/pc-dbCBS/deps/mujoco-3.3.6")
@@ -56,3 +59,40 @@ target_link_libraries(pc_dbcbs PRIVATE
   ${NLOPT_LIBRARIES} 
   glfw
   )
+
+
+add_library(pcdbcbs_api SHARED
+  src/pc_dbcbs_api.cpp
+  src/init_guess_mujoco.cpp
+  src/init_guess_payload.cpp
+  src/init_guess_unicycles.cpp
+)
+
+target_include_directories(pcdbcbs_api PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/deps/dynoplan/include
+)
+
+target_link_libraries(pcdbcbs_api PRIVATE
+  idbastar::optimization
+  idbastar::tdbastar
+  ${Boost_LIBRARIES}
+  ${YAML_LIBRARIES}
+  ${FCL_LIBRARIES}
+  ${NLOPT_LIBRARIES}
+  glfw
+)
+
+# Python module (pybind11 is already added by dynobench)
+pybind11_add_module(pcdbcbs MODULE
+  src/py_pcdbcbs.cpp
+)
+
+target_include_directories(pcdbcbs PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/deps/dynoplan/include
+)
+
+target_link_libraries(pcdbcbs PRIVATE
+  pcdbcbs_api
+)
