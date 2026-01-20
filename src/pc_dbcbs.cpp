@@ -73,6 +73,7 @@ int main(int argc, char* argv[]) {
     if (cfg["pc-dbcbs"]){
       cfg = cfg["pc-dbcbs"]["default"];
     }
+    bool visualize_mujoco = cfg["visualize_mujoco"] ? cfg["visualize_mujoco"].as<bool>() : false;
     fs::path output_path(outputFile);
     std::string output_folder = output_path.parent_path().string();
     // payload HL constraints configs
@@ -187,7 +188,9 @@ int main(int argc, char* argv[]) {
             motionsFile = "../motion_primitives/integrator2_3d_v0/integrator2_3d_v0.bin.im.bin.sp.bin";
         } else if (robotType == "quad3d_v0" || startsWith(robots[0]->name, "mujocoquad")) {
             // motionsFile = "../motion_primitives/quad3d_v0/quad3d_v0.msgpack";
-            motionsFile = "../motion_primitives/quad_dt_0.02/quad3d.bin.im.bin.sp.bin"; 
+            // motionsFile = "../motion_primitives/quad_dt_0.02/quad3d.bin.im.bin.sp.bin"; 
+            // motionsFile = "../motion_primitives/quad_dt_test_0.02/quad3d.bin.im.bin.sp.bin"; 
+            motionsFile = "../motion_primitives/quad3d_max_tilt_angle_40/quad3d.bin.im.bin.sp.bin"; 
             // motionsFile = "../motion_primitives/mujoco_quad3d/quad3d.bin.im.bin";
             // std::cout << "motionsFile: " << motionsFile << std::endl;
         } else {
@@ -513,7 +516,7 @@ int main(int argc, char* argv[]) {
             } else {
                 std::cerr << "Error: Unable to open file for writing." << std::endl;
             }
-              if (startsWith(robots[0]->name, "mujoco")) {
+              if (startsWith(robots[0]->name, "mujoco") && visualize_mujoco) {
                 std::string videoPath = resultPath;
                 std::string toReplace = "init_guess_mujoco.yaml";
                 size_t pos_resultPath = videoPath.find(toReplace);

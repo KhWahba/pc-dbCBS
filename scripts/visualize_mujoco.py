@@ -69,7 +69,7 @@ class Visualizer():
         counter = 1
         if self.draw_payload:
             self.vis[prefix + "_payload"].set_object(g.Mesh(
-                g.Sphere(0.03), g.MeshLambertMaterial(DnametoColor.get(color_name, 0xff11dd))))
+                g.Sphere(0.05), g.MeshLambertMaterial(DnametoColor.get(color_name, 0xff11dd))))
         else:
             counter = 0
 
@@ -117,7 +117,9 @@ class Visualizer():
             for i in range(counter,self.nb_bodies):
                 quad_st = state[7*i: 7*i + 7]
                 quad_pos = quad_st[0:3]
-                quad_quat = quad_st[3:7]
+                qw = quad_st[6]
+                qxyz = quad_st[3:6]
+                quad_quat = [qw, qxyz[0], qxyz[1], qxyz[2]]
                 frame[prefix + "_quad_" + str(i)].set_transform(
                     tf.translation_matrix(quad_pos).dot(
                         tf.quaternion_matrix(quad_quat)))
@@ -153,7 +155,9 @@ class Visualizer():
             for i in range(counter,self.nb_bodies):
                 quad_st = state[7*i: 7*i + 7]
                 quad_pos = quad_st[0:3]
-                quad_quat = quad_st[3:7]
+                qw = quad_st[6]
+                qxyz = quad_st[3:6]
+                quad_quat = [qw, qxyz[0], qxyz[1], qxyz[2]]
                 self.vis[prefix + "_quad_" + str(i)].set_transform(
                     tf.translation_matrix(quad_pos).dot(
                         tf.quaternion_matrix(quad_quat)))
