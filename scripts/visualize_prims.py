@@ -8,9 +8,7 @@ import meshcat.geometry as g
 import meshcat.transformations as tf
 from meshcat.animation import Animation
 import argparse
-import matplotlib.pyplot as plt
 from pathlib import Path
-from meshcat.animation import convert_frames_to_video
 
 
 DnametoColor = {
@@ -31,7 +29,7 @@ class Visualizer():
         self.vis["/Cameras/default/rotated/<object>"].set_transform(
             tf.translation_matrix([-2, 0, 2.5]))
         self.nb_bodies = num_prims
-        # self._addQuad()
+        self._addQuad()
 
     def draw_traces(self, prims_dict):
         c_quad = 0x0000ff    # blue
@@ -59,7 +57,9 @@ class Visualizer():
                 state = states[i]
                 quad_st = state
                 quad_pos = quad_st[0:3]
-                quad_quat = quad_st[3:7]
+                qw = quad_st[6]
+                qxyz = quad_st[3:6]
+                quad_quat = [qw, qxyz[0], qxyz[1], qxyz[2]]
                 frame[prefix + "_quad_" + str(i)].set_transform(
                     tf.translation_matrix(quad_pos).dot(
                         tf.quaternion_matrix(quad_quat)))
@@ -71,17 +71,20 @@ class Visualizer():
                 state = states[i]
                 quad_st = state
                 quad_pos = quad_st[0:3]
-                quad_quat = quad_st[3:7]
+                qw = quad_st[6]
+                qxyz = quad_st[3:6]
+                quad_quat = [qw, qxyz[0], qxyz[1], qxyz[2]]
                 self.vis[prefix + "_quad_" + str(i)].set_transform(
                     tf.translation_matrix(quad_pos).dot(
                     tf.quaternion_matrix(quad_quat)))
                 
                 self.vis[prefix + "_sphere_" + str(i)].set_transform(tf.translation_matrix(quad_pos))
 
-def prims_meschat():
+def prims_meshcat():
     parser = argparse.ArgumentParser()
     parser.add_argument('--prims', type=str, help="yaml prims file")
     parser.add_argument('--output', type=str, default="../output.html", help="output html file")
+    parser.add_argument('--num_samples', type=int, default=10, help="number of random primitives to visualize")
     args = parser.parse_args()
 
 
@@ -92,12 +95,23 @@ def prims_meschat():
         print("Loaded primitives from: ", args.prims)
 
     print("number of primitives: ", len(prims_dict))
-    visualizer = Visualizer(num_prims=len(prims_dict))
+    
+    # Sample random primitives
+    rng = np.random.default_rng(42)  # fixed seed for reproducibility
+    num_prims_available = len(prims_dict)
+    num_samples = min(args.num_samples, num_prims_available)
+    selected_indices = rng.choice(num_prims_available, size=num_samples, replace=False)
+    selected_indices = sorted(selected_indices)  # Sort for consistency
+    print(f"Selected {num_samples} random primitives: {selected_indices}")
+    # Filter primitives to only selected ones
+    prims_dict_sampled = [prims_dict[i] for i in selected_indices]
+    
+    visualizer = Visualizer(num_prims=num_samples)
 
     prims = []
     lengths = []
-    for i in range(len(prims_dict)):
-        states = prims_dict[i]["states"]
+    for i in range(len(prims_dict_sampled)):
+        states = prims_dict_sampled[i]["states"]
         prims.append(states)
         lengths.append(len(states))
     max_length = max(lengths)
@@ -111,9 +125,8 @@ def prims_meschat():
     # Displace each primitive in x and y between limits (-3, 3)
     prims_with_displacement = []
     n_prims = len(prims)
-    x_limits = (-5, 5)
-    y_limits = (-5, 5)
-    rng = np.random.default_rng(42)  # fixed seed for reproducibility
+    x_limits = (-3, 3)
+    y_limits = (-3, 3)
     for i, prim in enumerate(prims):
         states = []
         # Random displacement in square
@@ -136,11 +149,10 @@ def prims_meschat():
     
 
 
-    anim = Animation(default_framerate=1/0.1)  # 10 Hz
+    anim = Animation(default_framerate=1/0.02)  # 50 Hz
     for j ,state in enumerate(states):
         with anim.at_frame(visualizer.vis, j) as frame:
-            pass
-            # visualizer.updateVis(state, frame=frame)
+            visualizer.updateVis(state, frame=frame)
             
     visualizer.vis.set_animation(anim)
 
@@ -151,4 +163,4 @@ def prims_meschat():
 
 
 if __name__ == "__main__":
-    prims_meschat()
+    prims_meshcat()
