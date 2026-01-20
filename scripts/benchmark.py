@@ -314,6 +314,7 @@ def execute_task(task: ExecutionTask):
     mycfg["num_primitives_rate"] = task.db_param["num_primitives_rate"]
     mycfg["heuristic1"] = task.db_param["heuristic1"]
     mycfg["payload"] = task.db_param["payload"]
+    mycfg["visualize_mujoco"] = task.db_param.get("visualize_mujoco", False)
     # wildcard matching
     import fnmatch
     for k, v in mycfg.items():
@@ -398,9 +399,10 @@ def main():
         # {"delta_0": 0.8, "delta_rate": 0.99, "num_primitives_0": 200, "num_primitives_rate": 0.05, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-0.5,0,0.5],  "tol":0.8}}, # mujocoquad_forest
         # {"delta_0": 0.65, "delta_rate": 0.99, "num_primitives_0": 1000, "num_primitives_rate": 0.05, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-0.5,0,0.5],  "tol":0.8}}, # mujocoquad_flip
         # {"delta_0": 0.5, "delta_rate": 0.99, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.5}}, # mujucoquadspayload_empty1
-        {"delta_0": 0.9, "delta_rate": 0.9, "num_primitives_0": 3000, "num_primitives_rate": 1.0, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.0}}, # mujucoquadspayload_empty2
+        # {"delta_0": 0.9, "delta_rate": 0.9, "num_primitives_0": 1000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": False, "anytime": False, "p0_init_guess": [-1.0,  0.0, 0.2],  "tol":0.0}, "visualize_mujoco": True}, # mujucoquadspayload_empty2
+        {"delta_0": 0.6, "delta_rate": 0.9, "num_primitives_0": 10000, "num_primitives_rate": 0.5, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,  0.0, 0.35],  "tol":0.0}, "visualize_mujoco": True}, # mujucoquadspayload_empty2
         # {"delta_0": 0.9, "delta_rate": 0.9, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.5],  "tol":0.9}}, # mujucoquadspayload_empty3
-        # {"delta_0": 0.9, "delta_rate": 0.95, "num_primitives_0": 500, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.2],  "tol":0.6}}, # mujucoquadspayload1_obs1
+        # {"delta_0": 0.9, "delta_rate": 0.95, "num_primitives_0": 10000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.2],  "tol":0.0}}, # mujucoquadspayload1_obs1
         # {"delta_0": 0.7, "delta_rate": 0.9, "num_primitives_0": 2000, "num_primitives_rate": 0.1, "heuristic1": "no-reverse-search", "payload": {"solve_p0": True, "anytime": False, "p0_init_guess": [-1.0,0.0,0.2],  "tol":0.0}}, # mujucoquadspayload1_obs2
     ] 
 

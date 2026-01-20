@@ -3,10 +3,10 @@ pc-dbcbs:
     delta_0: 0.5
     delta_rate: 0.9
     num_primitives_0: 1000
-    max_motions: 30000
+    max_motions: 50000
     num_primitives_rate: 0.05
     delta_factor_goal: 1.0
-    shuffle: False
+    shuffle: true
     alpha: 0.6
     filter_duplicates: True
     heuristic1: "no-reverse-search"

@@ -2,7 +2,7 @@ time_weight: 0.5
 time_ref: 0.01
 check_with_finite_diff: false
 soft_control_bounds: false
-CALLBACKS: false
+CALLBACKS: true
 use_finite_diff: false
 use_warmstart: true
 rollout_warmstart: false
@@ -20,8 +20,9 @@ u_bound_scale: 1
 max_iter: 200
 debug_file_name: /tmp/debug_file.yaml
 weight_goal: 300.0
-collision_weight: 200.0
-smooth_traj: true
+collision_weight: 600.0
+smooth_traj: false
 shift_repeat: false
-track_reference: false
+reg_control: true
+control_reg_weight: 10.0
 penalty_iterations: 1
