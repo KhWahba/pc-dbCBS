@@ -154,9 +154,6 @@ Result run(const Options& opt) {
   dynobench::Trajectory sol;
   dynobench::Trajectory sol_broken;
 
-  // ----------------------------
-  // Begin (your CLI main logic)
-  // ----------------------------
   std::vector<double> p0_init_guess;
   bool anytime_planning = false;
   bool solve_p0 = false;
@@ -267,7 +264,7 @@ Result run(const Options& opt) {
     } else if (robotType == "integrator2_3d_v0") {
       motionsFile = "../motion_primitives/integrator2_3d_v0/integrator2_3d_v0.bin.im.bin.sp.bin";
     } else if (robotType == "quad3d_v0" || startsWith(robots[0]->name, "mujocoquad")) {
-      motionsFile = motion_primitives_base + "quad_dt_0.02/quad3d.bin.im.bin.sp.bin";
+      motionsFile = motion_primitives_base + "quad3d_max_tilt_angle_40/quad3d.bin.im.bin.sp.bin";
     } else {
       throw std::runtime_error("Unknown motion filename for this robottype!");
     }
