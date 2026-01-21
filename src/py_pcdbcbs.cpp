@@ -2,10 +2,14 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 #include "pc_dbcbs_api.hpp"
+#include <csignal>
+#include <cstdlib>
 
 namespace py = pybind11;
 
 PYBIND11_MODULE(pcdbcbs, m) {
+    std::signal(SIGINT, [](int) { std::quick_exit(130);});
+
   m.doc() = "Python bindings for pc-dbCBS (pcdbcbs_api)";
 
   py::class_<pcdbcbs::Options>(m, "Options")
@@ -37,4 +41,5 @@ PYBIND11_MODULE(pcdbcbs, m) {
       static_cast<pcdbcbs::Result (*)(const pcdbcbs::Options&)>(&pcdbcbs::run),
       py::arg("opt"),
       "Run pc-dbCBS (discrete + optimization) and return Result");
+
 }
