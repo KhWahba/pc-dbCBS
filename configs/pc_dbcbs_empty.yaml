@@ -1,0 +1,29 @@
+pc-dbcbs:
+  default:
+    delta_0: 0.8
+    delta_rate: 0.9
+    num_primitives_0: 2000
+    max_motions: 50000
+    num_primitives_rate: 0.2
+    delta_factor_goal: 1.0
+    shuffle: true
+    alpha: 0.6
+    filter_duplicates: True
+    heuristic1: "no-reverse-search"
+    heuristic1_delta: 1.0
+    visualize_mujoco: true
+    payload:
+      solve_p0: True
+      anytime: False
+      p0_init_guess: [-1.0,  0.0, 0.55]
+      tol: 0.0
+    payload_opt:
+      mu: 1.0
+      lambda: 0.1
+      w_strech: 0.5
+      w_bounds: 10.0
+      w_coll:   100.0
+      d_safe: 0.1
+      bounds_min: [-10.0, -10.0, 0.0]
+      bounds_max: [10.0, 10.0, 5.0]
+        

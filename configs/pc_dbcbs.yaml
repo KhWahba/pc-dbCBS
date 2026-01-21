@@ -7,7 +7,7 @@ pc-dbcbs:
     num_primitives_rate: 0.05
     delta_factor_goal: 1.0
     shuffle: true
-    alpha: 0.6
+    alpha: 0.5
     filter_duplicates: True
     heuristic1: "no-reverse-search"
     heuristic1_delta: 1.0
@@ -16,13 +16,22 @@ pc-dbcbs:
       anytime: False
       p0_init_guess: [0.0, 0.0, 0.4]
       tol: 0.3
+    # payload_opt:
+    #   mu: 0.01
+    #   lambda: 0.0
+    #   w_strech: 100.0
+    #   w_bounds: 10.0
+    #   w_coll:   100.0
+    #   d_safe: 0.1
+    #   bounds_min: [-2.0, -0.5, 0.0]
+    #   bounds_max: [2.0, 0.5, 1.0]      
     payload_opt:
-      mu: 0.01
+      mu: 2.0
       lambda: 0.0
-      w_strech: 100.0
+      w_strech: 1000.0
       w_bounds: 10.0
       w_coll:   100.0
       d_safe: 0.1
-      bounds_min: [-2.0, -0.5, 0.0]
-      bounds_max: [2.0, 0.5, 1.0]
-      
+      bounds_min: [-2.0, -1.0, 0.0]
+      bounds_max: [2.0, 1.0, 2.0]
+        
