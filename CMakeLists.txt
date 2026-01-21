@@ -16,7 +16,27 @@ message(STATUS "Found NLopt in ${NLOPT_INCLUDE_DIRS}")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(deps/dynoplan)
 
-set(MJ_ROOT "$ENV{HOME}/pc-dbCBS/deps/mujoco-3.3.6")
+# --- MuJoCo root (portable) ---
+set(MJ_ROOT "" CACHE PATH "Path to MuJoCo root (contains include/ and lib/)")
+
+if(NOT MJ_ROOT)
+  if(DEFINED ENV{MJ_ROOT})
+    set(MJ_ROOT "$ENV{MJ_ROOT}")
+  else()
+    set(MJ_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/mujoco-3.3.6")
+  endif()
+endif()
+
+message(STATUS "MJ_ROOT = ${MJ_ROOT}")
+
+if(NOT EXISTS "${MJ_ROOT}/include/mujoco/mujoco.h")
+  message(FATAL_ERROR "MuJoCo headers not found: ${MJ_ROOT}/include/mujoco/mujoco.h")
+endif()
+
+if(NOT EXISTS "${MJ_ROOT}/lib/libmujoco.so")
+  message(FATAL_ERROR "MuJoCo library not found: ${MJ_ROOT}/lib/libmujoco.so")
+endif()
+
 if(NOT glfw3_FOUND)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(GLFW REQUIRED glfw3) # uses glfw3.pc
