@@ -1,17 +1,18 @@
 pc-dbcbs:
   default:
-    delta_0: 0.8
-    delta_rate: 0.9
-    num_primitives_0: 2000
-    max_motions: 50000
-    num_primitives_rate: 0.2
+    delta_0: 0.85
+    delta_rate: 0.99
+    delta_min: 0.75
+    num_primitives_0: 5000
+    max_motions: 340000
+    num_primitives_rate: 0.1
     delta_factor_goal: 1.0
     shuffle: true
     alpha: 0.6
-    filter_duplicates: True
+    filter_duplicates: true
     heuristic1: "no-reverse-search"
     heuristic1_delta: 1.0
-    visualize_mujoco: true
+    visualize_mujoco: false
     payload:
       solve_p0: True
       anytime: False

@@ -25,6 +25,7 @@ struct Options {
   // Leave empty to keep current behavior / macro.
   std::string dynobench_base = "";
   std::string motion_primitives_base = "";
+  bool warmstart_optimization = true;
 };
 
 struct Result {

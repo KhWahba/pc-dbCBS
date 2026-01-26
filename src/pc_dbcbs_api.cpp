@@ -1,5 +1,3 @@
-// pcdbcbs_api.cpp  (final, corrected for your actual codebase)
-
 #include "pc_dbcbs_api.hpp"
 
 #include <chrono>
@@ -58,6 +56,80 @@ namespace fs = std::filesystem;
 
 namespace {
 
+static void write_joint_env_yaml_from_input(const std::string& input_env,
+                                            const std::string& out_env_yaml) {
+  YAML::Node env = YAML::LoadFile(input_env);
+
+  if (!env["joint_robot"] || env["joint_robot"].size() == 0) {
+    throw std::runtime_error("Input env missing 'joint_robot' (needed to generate env.yaml).");
+  }
+
+  YAML::Node robotsNode = env["joint_robot"];
+
+  YAML::Node outputEnvYaml = YAML::Clone(env);
+  outputEnvYaml.remove("joint_robot");
+  outputEnvYaml["robots"] = robotsNode;
+
+  std::ofstream envOut(out_env_yaml);
+  if (!envOut) throw std::runtime_error("Could not write env.yaml: " + out_env_yaml);
+  envOut << outputEnvYaml;
+}
+
+static void write_dummy_init_guess_from_joint_env(const std::string& joint_env_yaml,
+                                                  const std::string& out_init_yaml) {
+  YAML::Node env = YAML::LoadFile(joint_env_yaml);
+
+  if (!env["robots"] || env["robots"].size() == 0)
+    throw std::runtime_error("env.yaml missing 'robots'.");
+
+  auto start = env["robots"][0]["start"].as<std::vector<double>>();
+  auto goal  = env["robots"][0]["goal"].as<std::vector<double>>();
+
+  if (start.size() < 3 || goal.size() < 3)
+    throw std::runtime_error("State dimension < 3, cannot extract payload position.");
+
+  // action dim: mujoco payload case: 4 * number of quads
+  int nu = 4;
+  if (env["robots"][0]["quadsNum"]) {
+    int n_quads = env["robots"][0]["quadsNum"].as<int>();
+    nu = 4 * n_quads;
+  }
+
+  // compute N from payload distance and dt
+  constexpr double dt = 0.02;
+  Eigen::Vector3d p0(start[0], start[1], start[2]);
+  Eigen::Vector3d p1(goal[0], goal[1], goal[2]);
+  double dist = (p1 - p0).norm();
+
+  int N = std::max(50, static_cast<int>(std::ceil(dist / dt)));
+
+  // states: N copies of start
+  YAML::Node statesNode;
+  for (int k = 0; k < N; ++k) {
+    YAML::Node row;
+    for (double v : start) row.push_back(v);
+    statesNode.push_back(row);
+  }
+
+  // actions: (N-1) rows, all 1.0
+  YAML::Node actionsNode;
+  for (int k = 0; k < N - 1; ++k) {
+    YAML::Node u;
+    for (int i = 0; i < nu; ++i) u.push_back(1.0);
+    actionsNode.push_back(u);
+  }
+
+  YAML::Node result;
+  result["result"]["states"] = statesNode;
+  result["result"]["actions"] = actionsNode;
+  result["result"]["num_states"] = N;
+  result["result"]["num_action"] = N - 1;
+
+  std::ofstream out(out_init_yaml);
+  if (!out) throw std::runtime_error("Could not write init_guess yaml: " + out_init_yaml);
+  out << result;
+}
+
 static void traj_to_mats(const dynobench::Trajectory& tr,
                          Eigen::MatrixXd& X,
                          Eigen::MatrixXd& U) {
@@ -94,10 +166,10 @@ static void traj_to_mats(const dynobench::Trajectory& tr,
 }
 
 static pcdbcbs::Result make_result(bool solved_db,
-                                  bool solved_opt,
-                                  const std::chrono::duration<double>& duration_discrete,
-                                  const std::chrono::duration<double>& duration_opt,
-                                  const dynobench::Trajectory& sol) {
+                                   bool solved_opt,
+                                   const std::chrono::duration<double>& duration_discrete,
+                                   const std::chrono::duration<double>& duration_opt,
+                                   const dynobench::Trajectory& sol) {
   pcdbcbs::Result res;
   res.solved_db = solved_db;
   res.solved_opt = solved_opt;
@@ -123,29 +195,35 @@ Result run(const Options& opt) {
   if (opt.pc_dbcbs_cfg_yaml.empty()) throw std::runtime_error("Options.pc_dbcbs_cfg_yaml is empty");
   if (opt.opt_cfg_yaml.empty()) throw std::runtime_error("Options.opt_cfg_yaml is empty");
   if (opt.motion_primitives_base.empty()) throw std::runtime_error("Options.motion_primitives_base is empty");
-  
-   std::string inputFile = opt.input_yaml;
-   std::string outputFile = opt.output_yaml;
-   std::string optimizationFile = opt.optimization_yaml;
-   std::string cfgFile = opt.pc_dbcbs_cfg_yaml;
-   std::string optcfgFile = opt.opt_cfg_yaml;
-   std::string motion_primitives_base = opt.motion_primitives_base; 
-   double timeLimit = opt.time_limit;
 
-    std::string dynobench_base =
+  std::string inputFile = opt.input_yaml;
+  std::string outputFile = opt.output_yaml;
+  std::string optimizationFile = opt.optimization_yaml;
+  std::string cfgFile = opt.pc_dbcbs_cfg_yaml;
+  std::string optcfgFile = opt.opt_cfg_yaml;
+  std::string motion_primitives_base = opt.motion_primitives_base;
+  double timeLimit = opt.time_limit;
+
+  // NOTE: we use this both to patch opt_cfg["warmstart"] and (when false) to trigger optimization-only mode.
+  bool warmstart_optimization = opt.warmstart_optimization;
+
+  std::string dynobench_base =
       opt.dynobench_base.empty() ? std::string(DYNOBENCH_BASE) : opt.dynobench_base;
 
   YAML::Node cfg = YAML::LoadFile(cfgFile);
   if (cfg["pc-dbcbs"]) cfg = cfg["pc-dbcbs"]["default"];
 
-    bool visualize_mujoco_cfg =
+  bool visualize_mujoco_cfg =
       cfg["visualize_mujoco"] ? cfg["visualize_mujoco"].as<bool>() : false;
-    bool visualize_mujoco =
+  bool visualize_mujoco =
       opt.override_visualize_mujoco ? opt.visualize_mujoco : visualize_mujoco_cfg;
 
   fs::path output_path(outputFile);
   std::string output_folder = output_path.parent_path().string();
 
+  // -------------------------
+  // Declare these BEFORE lambdas (fixes your compile errors)
+  // -------------------------
   bool solved_db = false;
   bool solved_opt = false;
   std::chrono::duration<double> duration_discrete{0.0};
@@ -154,7 +232,90 @@ Result run(const Options& opt) {
   dynobench::Trajectory sol;
   dynobench::Trajectory sol_broken;
 
-  std::vector<double> p0_init_guess;
+  std::string optcfgFile_effective; // used in normal optimization path too
+  // -------------------------
+
+  // --- Helper: patch opt_cfg_yaml warmstart key (no changes to execute_optMujoco) ---
+  auto write_patched_opt_cfg = [&](bool warmstart_flag) -> std::string {
+    YAML::Node opt_cfg = YAML::LoadFile(optcfgFile);
+    opt_cfg["use_warmstart"] = warmstart_flag;
+
+    fs::path patched = fs::path(output_folder) /
+        (std::string("opt_cfg_patched_") + (warmstart_flag ? "1" : "0") + ".yaml");
+
+    YAML::Emitter out;
+    out << opt_cfg;
+
+    std::ofstream f(patched.string());
+    if (!f) throw std::runtime_error("Could not write patched opt cfg: " + patched.string());
+    f << out.c_str();
+    f.close();
+    return patched.string();
+  };
+
+  // IMPORTANT: set optcfgFile_effective for the "normal" path (whatever warmstart_optimization currently is)
+  optcfgFile_effective = write_patched_opt_cfg(warmstart_optimization);
+
+  // Optimization-only fallback (your dummy init-guess hack)
+  auto run_optimization_only = [&](bool warmstart_flag) -> pcdbcbs::Result {
+    // local effective opt cfg for this mode
+    std::string optcfgFile_effective_local = write_patched_opt_cfg(warmstart_flag);
+
+    std::string resultPath = outputFile;
+    const std::string needle = "result_dbcbs.yaml";
+    const std::string repl   = "init_guess_mujoco.yaml";
+
+    size_t pos_resultPath = resultPath.rfind(needle);
+    if (pos_resultPath == std::string::npos) {
+      throw std::runtime_error(
+          "optimization-only mode requires output_yaml to contain 'result_dbcbs.yaml' "
+          "so we can place init/env next to it.");
+    }
+    resultPath.replace(pos_resultPath, needle.size(), repl);
+
+    fs::path folder = fs::path(resultPath).parent_path();
+    std::string joint_robot_env_path = (folder / "env.yaml").string();
+
+    // Create env.yaml (joint_robot -> robots)
+    write_joint_env_yaml_from_input(inputFile, joint_robot_env_path);
+
+    // Create minimal dummy init guess (guarantees horizon >= 25 and has actions)
+    write_dummy_init_guess_from_joint_env(joint_robot_env_path, resultPath);
+
+    auto opt_start = std::chrono::steady_clock::now();
+    bool sum_robot_cost = true;
+    std::string optimizationFile_anytime = optimizationFile;
+
+    bool feasible = execute_optMujoco(
+        joint_robot_env_path, resultPath,
+        optimizationFile, optimizationFile_anytime,
+        sol, dynobench_base.c_str(),
+        sum_robot_cost, sol_broken,
+        optcfgFile_effective_local);
+
+    duration_opt = std::chrono::steady_clock::now() - opt_start;
+
+    pcdbcbs::Result res;
+    res.solved_db = false;
+    res.solved_opt = feasible;
+    res.duration_discrete_sec = 0.0;
+    res.duration_opt_sec = duration_opt.count();
+    res.cost = sol.cost;
+    res.feasible = sol.feasible;
+    res.info = sol.info;
+    traj_to_mats(sol, res.X, res.U);
+    return res;
+  };
+
+  // -------------------------------------------------------------------------
+  // If warmstart disabled at API level -> skip pc-dbCBS entirely
+  // -------------------------------------------------------------------------
+  if (!warmstart_optimization) {
+    return run_optimization_only(false);
+  }
+
+  // -------------------------------------------------------------------------
+
   bool anytime_planning = false;
   bool solve_p0 = false;
   float tol = 0.3f;
@@ -163,13 +324,6 @@ Result run(const Options& opt) {
     if (cfg["payload"]["solve_p0"]) {
       solve_p0 = cfg["payload"]["solve_p0"].as<bool>();
       anytime_planning = cfg["payload"]["anytime"].as<bool>();
-    }
-    if (cfg["payload"]["p0_init_guess"]) {
-      for (const auto& value : cfg["payload"]["p0_init_guess"]) {
-        p0_init_guess.push_back(value.as<double>());
-      }
-    } else {
-      p0_init_guess = {0.0, 0.0, 0.0};
     }
     if (cfg["payload"]["tol"]) {
       tol = cfg["payload"]["tol"].as<float>();
@@ -200,6 +354,17 @@ Result run(const Options& opt) {
   options_tdbastar.shuffle = cfg["shuffle"] ? cfg["shuffle"].as<bool>() : false;
   options_tdbastar.rewire = true;
 
+  // ------------------------------------------------------------------
+  // BACKUP: store initial tdbastar options + primitive settings
+  // ------------------------------------------------------------------
+  const Options_tdbastar options_tdbastar_initial = options_tdbastar;
+  const size_t init_prim_num_initial = init_prim_num;
+
+  // choose a minimum delta threshold (use YAML if provided, else default)
+  const float delta_min =
+      (cfg["delta_min"] ? cfg["delta_min"].as<float>() : 0.6f);
+  // ------------------------------------------------------------------
+
   bool save_forward_search_expansion = false;
   bool save_reverse_search_expansion = false;
 
@@ -209,8 +374,17 @@ Result run(const Options& opt) {
   problem.models_base_path = dynobench_base + std::string("models/");
 
   Out_info_tdb out_tdb;
+  std::cout << "*** options_tdbastar ***" << std::endl;
+  options_tdbastar.print(std::cout);
+  std::cout << "***" << std::endl;
 
   YAML::Node env = YAML::LoadFile(inputFile);
+  std::vector<double> p0_init_guess(3);
+
+  // start is in the ENV yaml under joint_robot[0].start
+  p0_init_guess[0] = env["joint_robot"][0]["start"][0].as<double>();
+  p0_init_guess[1] = env["joint_robot"][0]["start"][1].as<double>();
+  p0_init_guess[2] = env["joint_robot"][0]["start"][2].as<double>();
 
   std::vector<fcl::CollisionObjectf*> obstacles;
   std::vector<std::shared_ptr<fcl::CollisionGeometryd>> collision_geometries;
@@ -251,8 +425,7 @@ Result run(const Options& opt) {
     robots.push_back(robot);
 
     if (robotType == "unicycle1_v0" || robotType == "unicycle1_sphere_v0") {
-      motionsFile = "../motion_primitives/unicycle1_v0/unicycle1_v0.msgpack";
-    motionsFile = motion_primitives_base + "unicycle1_v0/unicycle1_v0.msgpack";
+      motionsFile = motion_primitives_base + "unicycle1_v0/unicycle1_v0.msgpack";
     } else if (robotType == "unicycle1_v0_no_right") {
       motionsFile = "../motion_primitives/unicycle1_v0/unicycle_no_right.bin.im.bin.sp.bin";
     } else if (robotType == "unicycle2_v0") {
@@ -354,6 +527,30 @@ Result run(const Options& opt) {
   problem.goals = problem_original.goals;
   options_tdbastar.delta = cfg["delta_0"].as<float>();
 
+  // -------------------------------------------------------------------------
+  // TRIVIAL CASE GUARD:
+  // If start is already within delta of goal for ALL robots, low-level returns
+  // 1 state / 0 actions -> breaks optimization init guess pipeline.
+  // In that case, skip pc-dbCBS and run optimization-only with dummy init guess.
+  // -------------------------------------------------------------------------
+  {
+    bool all_reach_goal = true;
+    for (size_t i = 0; i < robots.size(); ++i) {
+      const double d = robots[i]->distance(problem.starts[i], problem.goals[i]);
+      if (d > static_cast<double>(options_tdbastar.delta)) {
+        all_reach_goal = false;
+        break;
+      }
+    }
+
+    if (all_reach_goal) {
+      std::cout << "[GUARD] start already within delta of goal for all robots (delta="
+                << options_tdbastar.delta << "). Using optimization-only fallback.\n";
+      return run_optimization_only(false);
+    }
+  }
+  // -------------------------------------------------------------------------
+
   int optimization_counter = 0;
   int optimization_counter_failed = 0;
   std::string optimizationFile_anytime = optimizationFile;
@@ -361,6 +558,32 @@ Result run(const Options& opt) {
   auto discrete_start = std::chrono::steady_clock::now();
 
   for (size_t iteration = 0;; ++iteration) {
+    // ------------------------------------------------------------------
+    // BACKUP: if primitives explode or delta becomes too small, reset
+    // ------------------------------------------------------------------
+    if (init_prim_num > 7000 || options_tdbastar.delta < delta_min) {
+      std::cout << "[BACKUP] Resetting options_tdbastar + primitives. "
+                << "init_prim_num=" << init_prim_num
+                << " delta=" << options_tdbastar.delta
+                << " (threshold=" << delta_min << ")\n";
+
+      options_tdbastar = options_tdbastar_initial;
+      init_prim_num = init_prim_num_initial;
+
+      // Rebuild sub_motions at the reset primitive count
+      for (size_t rr = 0; rr < problem.robotTypes.size(); ++rr) {
+        motion_to_motion(robot_motions[problem.robotTypes[rr]],
+                         sub_motions[problem.robotTypes[rr]],
+                         *robots[rr],
+                         init_prim_num);
+      }
+
+      // Restart this HL iteration cleanly with reset settings
+      discrete_start = std::chrono::steady_clock::now();
+      continue;
+    }
+    // ------------------------------------------------------------------
+
     if (iteration > 0) {
       init_prim_num = init_prim_num + init_prim_num * cfg["num_primitives_rate"].as<float>();
       init_prim_num = std::min<size_t>(init_prim_num, (size_t)1e6);
@@ -449,7 +672,6 @@ Result run(const Options& opt) {
 
         size_t pos_resultPath = resultPath.rfind("result_dbcbs.yaml");
         if (pos_resultPath == std::string::npos) {
-          // your CLI assumes that substring exists; keep same behavior but with clearer error
           throw std::runtime_error("outputFile must contain 'result_dbcbs.yaml' for init_guess path replacement.");
         }
 
@@ -516,7 +738,8 @@ Result run(const Options& opt) {
               joint_robot_env_path, resultPath,
               optimizationFile, optimizationFile_anytime,
               sol, dynobench_base.c_str(),
-              sum_robot_cost, sol_broken, optcfgFile);
+              sum_robot_cost, sol_broken,
+              optcfgFile_effective);
         }
 
         if (!feasible) {
@@ -542,8 +765,8 @@ Result run(const Options& opt) {
           if (startsWith(robots[0]->name, "mujoco") && visualize_mujoco) {
             std::string videoPath = resultPath;
             const std::string toReplace = "init_guess_mujoco.yaml";
-            auto p = videoPath.find(toReplace);
-            if (p != std::string::npos) videoPath.replace(p, toReplace.size(), "output.mp4");
+            auto p2 = videoPath.find(toReplace);
+            if (p2 != std::string::npos) videoPath.replace(p2, toReplace.size(), "output.mp4");
             execute_simMujoco(joint_robot_env_path, resultPath, sol,
                               dynobench_base.c_str(), videoPath, "auto", feasible = feasible);
           }
