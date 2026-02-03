@@ -8,4 +8,4 @@ void generate_init_guess_mujoco(std::string &envPath,
                     std::string &dbcbsPath, 
                     std::string &resultPath, 
                     size_t numRobots,
-                    std::string &joint_robot_env_path);
+                    std::string &joint_robot_env_path, size_t N_opt=150);

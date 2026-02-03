@@ -2,11 +2,11 @@ pc-dbcbs:
   default:
     delta_0: 0.85
     delta_rate: 0.99
-    delta_min: 0.75
-    num_primitives_0: 5000
+    delta_min: 0.5
+    num_primitives_0: 3500
     max_motions: 340000
     num_primitives_rate: 0.1
-    delta_factor_goal: 1.0
+    delta_factor_goal: 1.5
     shuffle: true
     alpha: 0.6
     filter_duplicates: true

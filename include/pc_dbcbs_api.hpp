@@ -26,6 +26,7 @@ struct Options {
   std::string dynobench_base = "";
   std::string motion_primitives_base = "";
   bool warmstart_optimization = true;
+  size_t N_opt = 100; 
 };
 
 struct Result {
@@ -70,7 +71,7 @@ inline Result run(const std::string& input_yaml,
                   const std::string& optimization_yaml,
                   const std::string& pc_dbcbs_cfg_yaml,
                   const std::string& opt_cfg_yaml,
-                  double time_limit) {
+                  double time_limit, const size_t N_opt) {
   Options o;
   o.input_yaml = input_yaml;
   o.output_yaml = output_yaml;
@@ -78,6 +79,7 @@ inline Result run(const std::string& input_yaml,
   o.pc_dbcbs_cfg_yaml = pc_dbcbs_cfg_yaml;
   o.opt_cfg_yaml = opt_cfg_yaml;
   o.time_limit = time_limit;
+  o.N_opt = N_opt;
   return run(o);
 }
 

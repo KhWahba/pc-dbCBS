@@ -24,7 +24,8 @@ PYBIND11_MODULE(pcdbcbs, m) {
       .def_readwrite("visualize_mujoco", &pcdbcbs::Options::visualize_mujoco)
       .def_readwrite("dynobench_base", &pcdbcbs::Options::dynobench_base)
       .def_readwrite("motion_primitives_base", &pcdbcbs::Options::motion_primitives_base)
-      .def_readwrite("warmstart_optimization", &pcdbcbs::Options::warmstart_optimization);
+      .def_readwrite("warmstart_optimization", &pcdbcbs::Options::warmstart_optimization)
+      .def_readwrite("N_opt", &pcdbcbs::Options::N_opt);
 
   py::class_<pcdbcbs::Result>(m, "Result")
       .def_readonly("solved_db", &pcdbcbs::Result::solved_db)

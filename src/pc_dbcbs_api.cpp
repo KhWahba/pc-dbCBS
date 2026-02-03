@@ -76,7 +76,7 @@ static void write_joint_env_yaml_from_input(const std::string& input_env,
 }
 
 static void write_dummy_init_guess_from_joint_env(const std::string& joint_env_yaml,
-                                                  const std::string& out_init_yaml) {
+                                                  const std::string& out_init_yaml, const size_t N_opt) {
   YAML::Node env = YAML::LoadFile(joint_env_yaml);
 
   if (!env["robots"] || env["robots"].size() == 0)
@@ -101,8 +101,8 @@ static void write_dummy_init_guess_from_joint_env(const std::string& joint_env_y
   Eigen::Vector3d p1(goal[0], goal[1], goal[2]);
   double dist = (p1 - p0).norm();
 
-  int N = std::max(50, static_cast<int>(std::ceil(dist / dt)));
-
+  // int N = std::max(50, static_cast<int>(std::ceil(dist / dt)));
+  size_t N = N_opt;
   // states: N copies of start
   YAML::Node statesNode;
   for (int k = 0; k < N; ++k) {
@@ -206,7 +206,7 @@ Result run(const Options& opt) {
 
   // NOTE: we use this both to patch opt_cfg["warmstart"] and (when false) to trigger optimization-only mode.
   bool warmstart_optimization = opt.warmstart_optimization;
-
+  const size_t N_opt = opt.N_opt;
   std::string dynobench_base =
       opt.dynobench_base.empty() ? std::string(DYNOBENCH_BASE) : opt.dynobench_base;
 
@@ -235,10 +235,9 @@ Result run(const Options& opt) {
   std::string optcfgFile_effective; // used in normal optimization path too
   // -------------------------
 
-  // --- Helper: patch opt_cfg_yaml warmstart key (no changes to execute_optMujoco) ---
   auto write_patched_opt_cfg = [&](bool warmstart_flag) -> std::string {
     YAML::Node opt_cfg = YAML::LoadFile(optcfgFile);
-    opt_cfg["use_warmstart"] = warmstart_flag;
+    // opt_cfg["use_warmstart"] = warmstart_flag;
 
     fs::path patched = fs::path(output_folder) /
         (std::string("opt_cfg_patched_") + (warmstart_flag ? "1" : "0") + ".yaml");
@@ -280,20 +279,21 @@ Result run(const Options& opt) {
     write_joint_env_yaml_from_input(inputFile, joint_robot_env_path);
 
     // Create minimal dummy init guess (guarantees horizon >= 25 and has actions)
-    write_dummy_init_guess_from_joint_env(joint_robot_env_path, resultPath);
+    write_dummy_init_guess_from_joint_env(joint_robot_env_path, resultPath, N_opt);
 
     auto opt_start = std::chrono::steady_clock::now();
     bool sum_robot_cost = true;
     std::string optimizationFile_anytime = optimizationFile;
 
-    bool feasible = execute_optMujoco(
+    bool feasible = execute_optILMujoco(
         joint_robot_env_path, resultPath,
         optimizationFile, optimizationFile_anytime,
         sol, dynobench_base.c_str(),
         sum_robot_cost, sol_broken,
-        optcfgFile_effective_local);
+        optcfgFile_effective_local, N_opt);
 
     duration_opt = std::chrono::steady_clock::now() - opt_start;
+    sol.to_yaml_format(optimizationFile.c_str());
 
     pcdbcbs::Result res;
     res.solved_db = false;
@@ -533,22 +533,23 @@ Result run(const Options& opt) {
   // 1 state / 0 actions -> breaks optimization init guess pipeline.
   // In that case, skip pc-dbCBS and run optimization-only with dummy init guess.
   // -------------------------------------------------------------------------
-  {
-    bool all_reach_goal = true;
-    for (size_t i = 0; i < robots.size(); ++i) {
+  // {
+    bool all_reach_goal = false;
+    for (size_t i = 0; i < robots.size(); ++i) {      
       const double d = robots[i]->distance(problem.starts[i], problem.goals[i]);
-      if (d > static_cast<double>(options_tdbastar.delta)) {
-        all_reach_goal = false;
+      std::cout << "check 1 start from goal with delta ofor all robots (delta="
+        << options_tdbastar.delta << "and d = " << d << ")" << std::endl;
+      if (d <= static_cast<double>(options_tdbastar.delta)) {
+        all_reach_goal = true;
         break;
       }
     }
-
     if (all_reach_goal) {
-      std::cout << "[GUARD] start already within delta of goal for all robots (delta="
+      std::cout << "[GUARD 1] start already within delta of goal for all robots (delta="
                 << options_tdbastar.delta << "). Using optimization-only fallback.\n";
       return run_optimization_only(false);
     }
-  }
+
   // -------------------------------------------------------------------------
 
   int optimization_counter = 0;
@@ -561,27 +562,46 @@ Result run(const Options& opt) {
     // ------------------------------------------------------------------
     // BACKUP: if primitives explode or delta becomes too small, reset
     // ------------------------------------------------------------------
-    if (init_prim_num > 7000 || options_tdbastar.delta < delta_min) {
+    if (options_tdbastar.delta < delta_min) {
       std::cout << "[BACKUP] Resetting options_tdbastar + primitives. "
                 << "init_prim_num=" << init_prim_num
                 << " delta=" << options_tdbastar.delta
                 << " (threshold=" << delta_min << ")\n";
 
       options_tdbastar = options_tdbastar_initial;
-      init_prim_num = init_prim_num_initial;
+      // init_prim_num = init_prim_num_initial;
 
-      // Rebuild sub_motions at the reset primitive count
-      for (size_t rr = 0; rr < problem.robotTypes.size(); ++rr) {
-        motion_to_motion(robot_motions[problem.robotTypes[rr]],
-                         sub_motions[problem.robotTypes[rr]],
-                         *robots[rr],
-                         init_prim_num);
-      }
+      // // Rebuild sub_motions at the reset primitive count
+      // for (size_t rr = 0; rr < problem.robotTypes.size(); ++rr) {
+      //   motion_to_motion(robot_motions[problem.robotTypes[rr]],
+      //                    sub_motions[problem.robotTypes[rr]],
+      //                    *robots[rr],
+      //                    init_prim_num);
+      // }
 
       // Restart this HL iteration cleanly with reset settings
       discrete_start = std::chrono::steady_clock::now();
       continue;
     }
+    bool all_reach_goal = false;
+    double d = 0.0;
+    
+    for (size_t i = 0; i < robots.size(); ++i) {
+      d = robots[i]->distance(problem.starts[i], problem.goals[i]);
+       std::cout << "check 2 start from goal with delta ofor all robots (delta="
+                << options_tdbastar.delta << "and d = " << d << std::endl;
+      if (d <= static_cast<double>(options_tdbastar.delta)) {
+        all_reach_goal = true;
+        break;
+      }
+    }
+
+    if (all_reach_goal) {
+      std::cout << "[GUARD 2] start already within delta of goal for all robots (delta="
+                << options_tdbastar.delta << "). Using optimization-only fallback." << "and d = " << d << std::endl;
+      return run_optimization_only(false);
+    }
+
     // ------------------------------------------------------------------
 
     if (iteration > 0) {
@@ -691,14 +711,14 @@ Result run(const Options& opt) {
             std::string out_mj = outputFile.substr(0, pos) + "_mujoco.yaml";
             resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), "init_guess_mujoco.yaml");
             export_solution_p0(p0_sol, out_mj);
-            generate_init_guess_mujoco(inputFile, out_mj, outputFile, resultPath, robots.size(), joint_robot_env_path);
+            generate_init_guess_mujoco(inputFile, out_mj, outputFile, resultPath, robots.size(), joint_robot_env_path, N_opt);
             p0_sol.clear();
           }
         } else if (startsWith(robots[0]->name, "mujocoquad")) {
           std::string out_mj = outputFile.substr(0, pos) + "_mujoco.yaml";
           resultPath.replace(pos_resultPath, std::string("result_dbcbs.yaml").length(), "init_guess_mujoco.yaml");
           export_solution_p0(p0_sol, out_mj);
-          generate_init_guess_mujoco(inputFile, out_mj, outputFile, resultPath, robots.size(), joint_robot_env_path);
+          generate_init_guess_mujoco(inputFile, out_mj, outputFile, resultPath, robots.size(), joint_robot_env_path, N_opt);
           p0_sol.clear();
         }
 
@@ -734,12 +754,12 @@ Result run(const Options& opt) {
           optimizationFile_anytime = optimizationFile.substr(0, pos) + "_" +
                                      std::to_string(optimization_counter) +
                                      optimizationFile.substr(pos);
-          feasible = execute_optMujoco(
+          feasible = execute_optILMujoco(
               joint_robot_env_path, resultPath,
               optimizationFile, optimizationFile_anytime,
               sol, dynobench_base.c_str(),
               sum_robot_cost, sol_broken,
-              optcfgFile_effective);
+              optcfgFile_effective, N_opt);
         }
 
         if (!feasible) {
